@@ -1,15 +1,15 @@
 import asyncio
 import random
 import traceback
-from pathlib import Path
 
 from astrbot.api import logger
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register
 from astrbot.api.provider import LLMResponse
-from astrbot.core.message.components import Plain, Image
+from astrbot.core.message.components import Image
 from astrbot.core.message.message_event_result import MessageChain
 from astrbot.api import AstrBotConfig
+from astrbot.core.star.star_tools import StarTools
 
 from .config.settings import ConfigLoader
 from .core.library_manager import LibraryManager
@@ -34,10 +34,9 @@ class MoodMemePlugin(Star):
         cfg_loader = ConfigLoader(config)
         self.settings = cfg_loader.load()
 
-        # 初始化数据目录和图库（图库放在插件目录下的 memes/）
-        self.plugin_dir = Path(__file__).parent
-        self.data_dir = self.plugin_dir
-        self.library_dir = self.plugin_dir / "memes"
+        # 初始化数据目录和图库（使用框架数据目录，不污染源码目录）
+        self.data_dir = StarTools.get_data_dir("astrbot_plugin_meme_manager_plus")
+        self.library_dir = self.data_dir / "memes"
 
         self.library_mgr = LibraryManager(self.library_dir)
         self.library_mgr.initialize()

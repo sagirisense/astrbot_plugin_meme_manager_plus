@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import io
 import random
@@ -265,7 +266,7 @@ class MoodImageManager:
                 return await self._grok_text2img(prompt, headers, resolution)
             try:
                 raw_data = ref_path.read_bytes()
-                compressed, mime_type = self._compress_image(raw_data)
+                compressed, mime_type = await asyncio.to_thread(self._compress_image, raw_data)
                 b64_data = base64.b64encode(compressed).decode("utf-8")
                 data_uri = f"data:{mime_type};base64,{b64_data}"
             except Exception:
