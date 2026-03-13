@@ -1,6 +1,6 @@
 name: astrbot_plugin_meme_manager_plus
 display_name: AI 心情表情管理器 Plus
-desc: 自动分析回复情绪与表达欲望，通过 Gemini/Grok API 智能生成表情图片，支持图生图和文生图双模式
+desc: astrbot_plugin_meme_manager改了一下，可以接入gemini或grok的生图，实现概率回复图片，概率因子由LLM判断；最好放几张初始表情分类要不效果不好懂得都懂
 help: |
   自动检测 Bot 回复的情绪和表达欲望，智能决定是否生图。
   支持 Gemini 和 Grok 双引擎，图库有参考图时图生图，无图时文生图。
