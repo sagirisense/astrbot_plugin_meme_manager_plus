@@ -75,13 +75,25 @@
   "probability_settings": {
     "description": "触发概率设置",
     "type": "object",
-    "hint": "控制生图的触发概率（先掷骰子，命中后才调用 LLM 分析心情）",
+    "hint": "两级概率：先判断是否触发表情发送，再判断是否调用大模型生成新图",
     "items": {
       "default_probability": {
         "description": "触发概率",
         "type": "int",
         "default": 20,
-        "hint": "每次 Bot 回复后触发生图的概率（0-100），命中后才会调用 LLM 判断心情"
+        "hint": "每次 Bot 回复后触发表情发送的概率（0-100），命中后才会调用 LLM 判断心情并发图"
+      },
+      "llm_generation_enabled": {
+        "description": "启用大模型生图",
+        "type": "bool",
+        "default": true,
+        "hint": "是否启用大模型生成新表情图片。关闭后只从图库已有图片中随机抽取"
+      },
+      "llm_generation_probability": {
+        "description": "大模型生图概率",
+        "type": "int",
+        "default": 30,
+        "hint": "触发后，再以此概率决定是否调用大模型生成新图（0-100）。未命中则直接从图库抽取已有图片"
       }
     }
   },
@@ -126,6 +138,56 @@
         "type": "bool",
         "default": true,
         "hint": "true=每个群独立冷却，false=每个用户独立冷却"
+      }
+    }
+  },
+  "auto_update_settings": {
+    "description": "自动图库更新",
+    "type": "object",
+    "hint": "定时从 Booru 图站搜索角色图片，LLM 自动分类心情后加入图库（不受每心情上限限制）",
+    "items": {
+      "auto_update_enabled": {
+        "description": "启用自动更新",
+        "type": "bool",
+        "default": false,
+        "hint": "开启后按设定间隔自动搜图并分类入库"
+      },
+      "auto_update_interval_hours": {
+        "description": "更新间隔（小时）",
+        "type": "float",
+        "default": 6,
+        "hint": "每隔多少小时执行一次自动搜图，最小 0.5"
+      },
+      "auto_update_search_tags": {
+        "description": "搜索标签",
+        "type": "string",
+        "default": "eris_greyrat solo",
+        "hint": "Booru 搜索标签，空格分隔。注意不同站标签不同：danbooru 用 eris_greyrat，yande.re 用 eris_boreas_greyrat"
+      },
+      "auto_update_images_per_cycle": {
+        "description": "每次搜索图片数",
+        "type": "int",
+        "default": 5,
+        "hint": "每次自动更新搜索并下载的图片数量（1-20）"
+      },
+      "auto_update_source": {
+        "description": "图片来源",
+        "type": "string",
+        "default": "danbooru",
+        "options": ["danbooru", "yandere", "konachan"],
+        "hint": "danbooru=danbooru.donmai.us（图最多），yandere=yande.re（高清），konachan=konachan.com"
+      },
+      "auto_update_min_score": {
+        "description": "最低评分",
+        "type": "int",
+        "default": 10,
+        "hint": "只下载评分高于此值的图片，过滤低质量内容"
+      },
+      "auto_update_filter_prompt": {
+        "description": "搜图筛选提示词",
+        "type": "string",
+        "default": "",
+        "hint": "搜图后由 LLM 判断是否入库的筛选条件。留空不筛选。例如：可以适度暴露，但不能不穿胸罩或内裤。满足条件输出 PASS，不满足输出 REJECT"
       }
     }
   }

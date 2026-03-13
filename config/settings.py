@@ -2,15 +2,17 @@ from dataclasses import dataclass
 
 
 DEFAULT_MOOD_PROMPT = (
-    "Analyze the following text. Do TWO things:\n"
-    "1. Rate the 'expression desire' (表达欲望) from 0.0 to 1.0 — how strongly this text "
-    "conveys emotion or would benefit from an expressive reaction image. "
-    "Factual/neutral text = low (0.0-0.3), mildly emotional = medium (0.3-0.7), "
-    "strongly emotional/funny/dramatic = high (0.7-1.0).\n"
-    "2. Classify the emotional tone into ONE of these categories: {categories}\n\n"
-    "Output format: score|mood  (e.g. 0.85|happy)\n"
-    "Output ONLY this format, nothing else.\n\n"
-    "Text to analyze:\n{text}"
+    "You must analyze the text below and respond with EXACTLY one line in this format:\n"
+    "score|mood\n\n"
+    "Rules:\n"
+    "- score: a decimal number between 0.0 and 1.0 representing expression desire\n"
+    "  (0.0-0.3 = neutral/factual, 0.3-0.7 = mild emotion, 0.7-1.0 = strong emotion)\n"
+    "- mood: MUST be one of these exact words: {categories}\n"
+    "- Use | as separator, no spaces around it\n\n"
+    "CORRECT examples: 0.85|happy  0.20|neutral  0.95|excited\n"
+    "WRONG examples: happy  0  1  0.5  good  I think it's happy\n\n"
+    "Text to analyze:\n{text}\n\n"
+    "Your response (ONLY score|mood, nothing else):"
 )
 
 DEFAULT_IMAGE_PROMPT = (
@@ -59,6 +61,8 @@ class PluginSettings:
 
     # Probability
     default_probability: int = 20
+    llm_generation_enabled: bool = True
+    llm_generation_probability: int = 30
 
     # Generation
     image_prompt_template: str = DEFAULT_IMAGE_PROMPT
@@ -68,6 +72,15 @@ class PluginSettings:
     # Cooldown
     cooldown_seconds: int = 60
     per_group: bool = True
+
+    # Auto update
+    auto_update_enabled: bool = False
+    auto_update_interval_hours: float = 6.0
+    auto_update_search_tags: str = "eris_greyrat solo"
+    auto_update_images_per_cycle: int = 5
+    auto_update_source: str = "danbooru"
+    auto_update_min_score: int = 10
+    auto_update_filter_prompt: str = ""
 
 
 class ConfigLoader:
@@ -105,6 +118,8 @@ class ConfigLoader:
 
         # Probability
         s.default_probability = self._get("probability_settings", "default_probability", default=20)
+        s.llm_generation_enabled = self._get("probability_settings", "llm_generation_enabled", default=True)
+        s.llm_generation_probability = self._get("probability_settings", "llm_generation_probability", default=30)
 
         # Generation
         s.image_prompt_template = self._get(
@@ -120,5 +135,14 @@ class ConfigLoader:
         # Cooldown
         s.cooldown_seconds = self._get("cooldown_settings", "cooldown_seconds", default=60)
         s.per_group = self._get("cooldown_settings", "per_group", default=True)
+
+        # Auto update
+        s.auto_update_enabled = self._get("auto_update_settings", "auto_update_enabled", default=False)
+        s.auto_update_interval_hours = self._get("auto_update_settings", "auto_update_interval_hours", default=6.0)
+        s.auto_update_search_tags = self._get("auto_update_settings", "auto_update_search_tags", default="eris_greyrat solo")
+        s.auto_update_images_per_cycle = self._get("auto_update_settings", "auto_update_images_per_cycle", default=5)
+        s.auto_update_source = self._get("auto_update_settings", "auto_update_source", default="danbooru")
+        s.auto_update_min_score = self._get("auto_update_settings", "auto_update_min_score", default=10)
+        s.auto_update_filter_prompt = self._get("auto_update_settings", "auto_update_filter_prompt", default="")
 
         return s

@@ -3,11 +3,9 @@ import traceback
 import aiohttp
 
 from astrbot.api import logger
-from astrbot.core.provider.entities import ProviderType
 
 from ..config.settings import DEFAULT_MOOD_PROMPT
-
-DEFAULT_GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
+from ..utils.provider_helper import load_mood_provider, LLMApiConfig
 
 
 class MoodAnalyzer:
@@ -19,53 +17,6 @@ class MoodAnalyzer:
     def __init__(self, context, settings):
         self.context = context
         self.settings = settings
-        self._api_key: str = ""
-        self._model: str = ""
-        self._api_base: str = ""
-        self._is_gemini: bool = False
-
-    def _load_api_config(self) -> bool:
-        """从情绪分析提供商读取 API 参数。"""
-        s = self.settings
-        provider_mgr = getattr(self.context, "provider_manager", None)
-        if not provider_mgr or not hasattr(provider_mgr, "inst_map"):
-            return False
-
-        provider = None
-        if s.mood_provider_id:
-            provider = provider_mgr.inst_map.get(s.mood_provider_id)
-        if not provider:
-            provider = provider_mgr.get_using_provider(
-                ProviderType.CHAT_COMPLETION, None
-            )
-        if not provider:
-            return False
-
-        keys = provider.get_keys() or []
-        if keys:
-            self._api_key = str(keys[0]).strip()
-
-        self._model = (
-            provider.get_model()
-            or provider.provider_config.get("model_config", {}).get("model")
-            or "gemini-2.0-flash-exp"
-        )
-
-        # 判断提供商类型
-        prov_type = provider.provider_config.get("type", "")
-        self._is_gemini = "google" in prov_type.lower() or "gemini" in prov_type.lower()
-
-        prov_base = provider.provider_config.get("api_base", "")
-        if prov_base:
-            prov_base = prov_base.rstrip("/")
-        if self._is_gemini:
-            if prov_base and prov_base.endswith("/v1"):
-                prov_base = prov_base.removesuffix("/v1")
-            self._api_base = (prov_base or DEFAULT_GEMINI_BASE).rstrip("/")
-        else:
-            self._api_base = (prov_base or "https://api.openai.com/v1").rstrip("/")
-
-        return bool(self._api_key)
 
     async def analyze(
         self, text: str, available_moods: list[str]
@@ -79,7 +30,8 @@ class MoodAnalyzer:
         if not text or not text.strip():
             return 0.0, None
 
-        if not self._load_api_config():
+        cfg = load_mood_provider(self.context, self.settings)
+        if not cfg.valid:
             logger.warning("[MemeMemPlus] 未找到情绪分析 API 配置")
             return 0.0, None
 
@@ -87,21 +39,23 @@ class MoodAnalyzer:
         prompt_template = self.settings.custom_mood_prompt or DEFAULT_MOOD_PROMPT
         prompt = prompt_template.replace("{categories}", categories_str).replace("{text}", text[:500])
         system_msg = (
-            "You are a mood and expression desire analyzer. "
-            "Output ONLY in the format: score|mood (e.g. 0.85|happy). Nothing else."
+            "You are a mood classifier. You MUST respond with exactly one line: score|mood. "
+            "score is a float 0.0-1.0, mood is one word from the given list. "
+            "Example: 0.85|happy. Do NOT output anything else — no explanation, no number alone, no extra text."
         )
 
-        logger.debug(f"[MemeMemPlus] 情绪分析请求: model={self._model}, gemini={self._is_gemini}")
+        logger.info(f"[MemeMemPlus] 情绪分析请求: model={cfg.model}, gemini={cfg.is_gemini}")
 
         try:
             timeout = aiohttp.ClientTimeout(total=30)
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                if self._is_gemini:
-                    result_text = await self._call_gemini(session, prompt, system_msg)
+                if cfg.is_gemini:
+                    result_text = await self._call_gemini(session, cfg, prompt, system_msg)
                 else:
-                    result_text = await self._call_openai(session, prompt, system_msg)
+                    result_text = await self._call_openai(session, cfg, prompt, system_msg)
 
                 if not result_text:
+                    logger.warning("[MemeMemPlus] 情绪分析 API 返回为空")
                     return 0.0, None
 
                 return self._parse_result(result_text, available_moods)
@@ -113,18 +67,21 @@ class MoodAnalyzer:
             logger.error(f"[MemeMemPlus] 情绪分析异常: {traceback.format_exc()}")
             return 0.0, None
 
-    async def _call_gemini(self, session: aiohttp.ClientSession, prompt: str, system_msg: str) -> str | None:
+    async def _call_gemini(
+        self, session: aiohttp.ClientSession, cfg: LLMApiConfig,
+        prompt: str, system_msg: str,
+    ) -> str | None:
         """Gemini API 调用。"""
-        api_base = self._api_base
+        api_base = cfg.api_base
         if not api_base.endswith(("/v1beta", "/v1")):
-            url = f"{api_base}/v1beta/models/{self._model}:generateContent"
+            url = f"{api_base}/v1beta/models/{cfg.model}:generateContent"
         else:
-            url = f"{api_base}/models/{self._model}:generateContent"
+            url = f"{api_base}/models/{cfg.model}:generateContent"
 
-        headers = {"x-goog-api-key": self._api_key, "Content-Type": "application/json"}
+        headers = {"x-goog-api-key": cfg.api_key, "Content-Type": "application/json"}
         payload = {
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-            "generationConfig": {"maxOutputTokens": 50},
+            "generationConfig": {"maxOutputTokens": 256, "temperature": 0.1},
             "systemInstruction": {"parts": [{"text": system_msg}]},
         }
 
@@ -136,23 +93,30 @@ class MoodAnalyzer:
             data = await resp.json()
             candidates = data.get("candidates", [])
             if not candidates:
+                logger.warning(f"[MemeMemPlus] Gemini 返回无 candidates: {str(data)[:300]}")
                 return None
             for part in candidates[0].get("content", {}).get("parts", []):
                 if "text" in part:
-                    return part["text"].strip()
+                    raw = part["text"].strip()
+                    logger.info(f"[MemeMemPlus] Gemini 原始返回: '{raw}'")
+                    return raw
+            logger.warning(f"[MemeMemPlus] Gemini candidates 中无 text: {str(candidates[0])[:200]}")
         return None
 
-    async def _call_openai(self, session: aiohttp.ClientSession, prompt: str, system_msg: str) -> str | None:
+    async def _call_openai(
+        self, session: aiohttp.ClientSession, cfg: LLMApiConfig,
+        prompt: str, system_msg: str,
+    ) -> str | None:
         """OpenAI 兼容 API 调用。"""
-        api_base = self._api_base
+        api_base = cfg.api_base
         if not api_base.endswith("/v1"):
             url = f"{api_base}/v1/chat/completions"
         else:
             url = f"{api_base}/chat/completions"
 
-        headers = {"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"}
+        headers = {"Authorization": f"Bearer {cfg.api_key}", "Content-Type": "application/json"}
         payload = {
-            "model": self._model,
+            "model": cfg.model,
             "messages": [
                 {"role": "system", "content": system_msg},
                 {"role": "user", "content": prompt},
@@ -160,7 +124,7 @@ class MoodAnalyzer:
             "max_tokens": 50,
         }
 
-        logger.debug(f"[MemeMemPlus] OpenAI 请求: url={url}, model={self._model}")
+        logger.debug(f"[MemeMemPlus] OpenAI 请求: url={url}, model={cfg.model}")
 
         async with session.post(url, headers=headers, json=payload) as resp:
             logger.debug(f"[MemeMemPlus] OpenAI 响应: status={resp.status}")
@@ -174,11 +138,9 @@ class MoodAnalyzer:
                 logger.debug("[MemeMemPlus] OpenAI 响应无 choices")
                 return None
             msg = choices[0].get("message", {})
-            # 优先取 content，为空时取 reasoning_content（deepseek-reasoner 等推理模型）
             content = msg.get("content", "").strip()
             if not content:
                 content = msg.get("reasoning_content", "").strip()
-            # 推理模型可能输出很长，只取最后一行
             if content and "\n" in content:
                 content = content.strip().split("\n")[-1].strip()
             logger.debug(f"[MemeMemPlus] OpenAI 返回内容: '{content}'")
@@ -188,28 +150,49 @@ class MoodAnalyzer:
     def _parse_result(
         self, result: str, available_moods: list[str]
     ) -> tuple[float, str | None]:
-        """解析 LLM 返回的 score|mood 格式。"""
+        """解析 LLM 返回的 score|mood 格式，带模糊匹配回退。"""
         result = result.strip()
         score = 0.5  # 默认中等表达欲望
+        mood_raw = ""
 
         if "|" in result:
             parts = result.split("|", 1)
             try:
                 score = float(parts[0].strip())
-                score = max(0.0, min(1.0, score))  # clamp to [0, 1]
+                score = max(0.0, min(1.0, score))
             except ValueError:
                 pass
             mood_raw = parts[1].strip().lower()
         else:
             mood_raw = result.strip().lower()
-            mood_raw = mood_raw.split()[0] if mood_raw else ""
 
-        mood_raw = mood_raw.strip(".,!?;:\"'()[]{}*")
+        mood_raw = mood_raw.strip(".,!?;:\"'()[]{}* \t\n")
 
+        # 1) 精确匹配
         for mood in available_moods:
             if mood.lower() == mood_raw:
-                logger.debug(f"[MemeMemPlus] 情绪分析结果: score={score:.2f}, mood={mood}")
+                logger.info(f"[MemeMemPlus] 情绪分析结果: score={score:.2f}, mood={mood}")
                 return score, mood
 
-        logger.debug(f"[MemeMemPlus] 情绪分析结果 '{mood_raw}' 不在可用列表中 (score={score:.2f})")
-        return score, None
+        # 2) 模糊匹配：在整个返回文本中搜索心情关键词
+        result_lower = result.lower()
+        for mood in available_moods:
+            if mood.lower() in result_lower:
+                logger.info(f"[MemeMemPlus] 情绪分析结果(模糊匹配): score={score:.2f}, mood={mood}")
+                return score, mood
+
+        # 3) 数字回退：LLM 可能返回了索引号
+        try:
+            idx = int(mood_raw)
+            if 0 <= idx < len(available_moods):
+                mood = available_moods[idx]
+                logger.info(f"[MemeMemPlus] 情绪分析结果(索引回退): score={score:.2f}, mood={mood}, raw='{mood_raw}'")
+                return score, mood
+        except (ValueError, IndexError):
+            pass
+
+        # 4) 全部失败，随机选一个并降低 score
+        import random
+        fallback = random.choice(available_moods)
+        logger.warning(f"[MemeMemPlus] 情绪分析无法解析 '{result}', 随机回退: mood={fallback}")
+        return 0.3, fallback
