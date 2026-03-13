@@ -1,0 +1,132 @@
+{
+  "enabled": {
+    "description": "启用插件",
+    "type": "bool",
+    "default": true,
+    "hint": "总开关，关闭后不会检测情绪和生成图片"
+  },
+  "gemini_api_settings": {
+    "description": "生图 API 设置",
+    "type": "object",
+    "hint": "配置用于生成表情图片的 API（密钥和地址从提供商自动读取）",
+    "items": {
+      "provider_id": {
+        "description": "生图模型提供商",
+        "type": "string",
+        "hint": "从 AstrBot 提供商列表中选择，自动读取模型/密钥/端点",
+        "_special": "select_provider",
+        "default": ""
+      },
+      "image_provider_type": {
+        "description": "生图引擎",
+        "type": "string",
+        "hint": "gemini = Gemini API（图生图+文生图），grok = xAI Grok API（OpenAI 兼容格式）",
+        "default": "gemini",
+        "options": ["gemini", "grok"]
+      },
+      "model": {
+        "description": "生图模型名称（可选覆盖）",
+        "type": "string",
+        "hint": "留空使用提供商默认模型。Gemini: gemini-2.0-flash-exp；Grok: grok-imagine-image",
+        "default": ""
+      },
+      "timeout": {
+        "description": "请求超时时间（秒）",
+        "type": "int",
+        "default": 60,
+        "hint": "Gemini API 请求超时时间"
+      },
+      "resolution": {
+        "description": "图片分辨率",
+        "type": "string",
+        "hint": "生成图片的分辨率",
+        "default": "1K",
+        "options": ["1K", "2K", "4K"]
+      },
+      "aspect_ratio": {
+        "description": "图片长宽比",
+        "type": "string",
+        "hint": "生成图片的长宽比",
+        "default": "1:1",
+        "options": ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"]
+      }
+    }
+  },
+  "mood_analysis_settings": {
+    "description": "情绪分析设置",
+    "type": "object",
+    "hint": "配置用于分析 Bot 回复情绪的 LLM",
+    "items": {
+      "mood_provider_id": {
+        "description": "情绪分析提供商",
+        "type": "string",
+        "hint": "用于分析情绪的 LLM 提供商，建议选择快速/便宜的模型",
+        "_special": "select_provider",
+        "default": ""
+      },
+      "custom_mood_prompt": {
+        "description": "自定义情绪分析提示词",
+        "type": "string",
+        "hint": "自定义分析提示词，留空使用默认。需包含 {categories} 占位符",
+        "default": ""
+      }
+    }
+  },
+  "probability_settings": {
+    "description": "触发概率设置",
+    "type": "object",
+    "hint": "控制生图的触发概率（先掷骰子，命中后才调用 LLM 分析心情）",
+    "items": {
+      "default_probability": {
+        "description": "触发概率",
+        "type": "int",
+        "default": 20,
+        "hint": "每次 Bot 回复后触发生图的概率（0-100），命中后才会调用 LLM 判断心情"
+      }
+    }
+  },
+  "generation_settings": {
+    "description": "生图设置",
+    "type": "object",
+    "hint": "控制图片生成的参数",
+    "items": {
+      "image_prompt_template": {
+        "description": "生图提示词模板",
+        "type": "string",
+        "hint": "{mood} 替换为心情",
+        "default": "Generate a high-quality expressive emoji/sticker reaction image. The character should clearly convey the emotion: {mood}. Style: detailed, clean lines, vibrant colors, suitable for chat sticker. Square format, white or transparent background. Ensure high detail on facial features."
+      },
+      "reference_prompt_addon": {
+        "description": "有参考图时的附加提示词",
+        "type": "string",
+        "hint": "当有参考图时追加的提示词",
+        "default": "CRITICAL: Study ALL provided reference images carefully. The generated image MUST depict THE EXACT SAME CHARACTER with identical facial features, hairstyle, art style. Only change the expression to match the mood."
+      },
+      "max_images_per_mood": {
+        "description": "每个心情最大图片数",
+        "type": "int",
+        "default": 20,
+        "hint": "当某心情目录图片数达到此值后，不再生成新图，改为随机抽取已有图片。0=不限制"
+      }
+    }
+  },
+  "cooldown_settings": {
+    "description": "冷却设置",
+    "type": "object",
+    "hint": "防止过于频繁地生成图片",
+    "items": {
+      "cooldown_seconds": {
+        "description": "冷却时间（秒）",
+        "type": "int",
+        "default": 60,
+        "hint": "两次生图之间的最短间隔"
+      },
+      "per_group": {
+        "description": "按群组冷却",
+        "type": "bool",
+        "default": true,
+        "hint": "true=每个群独立冷却，false=每个用户独立冷却"
+      }
+    }
+  }
+}
