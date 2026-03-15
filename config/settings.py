@@ -85,6 +85,41 @@ class PluginSettings:
     pixiv_search_target: str = "partial_match_for_tags"
     pixiv_allow_r18: bool = False
 
+    # NovelAI 独立模式
+    novelai_enabled: bool = False
+    novelai_api_key: str = ""
+    novelai_model: str = "nai-diffusion-4-5-full"
+    novelai_base_tags: str = "1girl, {{{solo}}}, {{{eris boreas greyrat}}}, mushoku tensei"
+    novelai_negative_prompt: str = "lowres, bad anatomy, bad hands, missing fingers, extra digit, fewer digits"
+    novelai_probability: int = 30
+    novelai_width: int = 832
+    novelai_height: int = 1216
+    novelai_steps: int = 28
+    novelai_scale: float = 5.0
+    novelai_sampler: str = "k_euler_ancestral"
+    novelai_tag_prompt: str = ""
+    novelai_cooldown_seconds: int = 60
+    # 高级生图参数
+    novelai_seed: int = -1  # -1=随机
+    novelai_quality_toggle: bool = True
+    novelai_uc_preset: int = 0  # 0=Heavy, 1=Light, 2=Human Focus, 3=None
+    novelai_cfg_rescale: float = 0.0
+    novelai_noise_schedule: str = "karras"
+    novelai_dynamic_thresholding: bool = False  # Decrisper
+    novelai_smea: bool = False  # V3 SMEA
+    novelai_smea_dyn: bool = False  # V3 Dynamic SMEA
+    novelai_variety_boost: float = 0.0  # skip_cfg_above_sigma, 0=关闭
+    # 参考图
+    novelai_use_reference: bool = False
+    novelai_reference_mode: str = "vibe_transfer"  # "vibe_transfer", "img2img", "director"
+    novelai_reference_strength: float = 0.6
+    novelai_reference_info_extracted: float = 1.0
+    novelai_img2img_strength: float = 0.6
+    novelai_img2img_noise: float = 0.0
+    novelai_director_strength: float = 0.5
+    novelai_director_fidelity: float = 0.5
+    novelai_director_info_extracted: float = 1.0
+
 
 class ConfigLoader:
     def __init__(self, raw_config):
@@ -152,5 +187,40 @@ class ConfigLoader:
         s.pixiv_search_keyword = self._get("auto_update_settings", "pixiv_search_keyword", default="")
         s.pixiv_search_target = self._get("auto_update_settings", "pixiv_search_target", default="partial_match_for_tags")
         s.pixiv_allow_r18 = self._get("auto_update_settings", "pixiv_allow_r18", default=False)
+
+        # NovelAI
+        s.novelai_enabled = self._get("novelai_settings", "novelai_enabled", default=False)
+        s.novelai_api_key = self._get("novelai_settings", "novelai_api_key", default="")
+        s.novelai_model = self._get("novelai_settings", "novelai_model", default="nai-diffusion-4-5-full")
+        s.novelai_base_tags = self._get("novelai_settings", "novelai_base_tags", default="1girl, {{{solo}}}, {{{eris boreas greyrat}}}, mushoku tensei")
+        s.novelai_negative_prompt = self._get("novelai_settings", "novelai_negative_prompt", default="lowres, bad anatomy, bad hands, missing fingers, extra digit, fewer digits")
+        s.novelai_probability = self._get("novelai_settings", "novelai_probability", default=30)
+        s.novelai_width = self._get("novelai_settings", "novelai_width", default=832)
+        s.novelai_height = self._get("novelai_settings", "novelai_height", default=1216)
+        s.novelai_steps = self._get("novelai_settings", "novelai_steps", default=28)
+        s.novelai_scale = self._get("novelai_settings", "novelai_scale", default=5.0)
+        s.novelai_sampler = self._get("novelai_settings", "novelai_sampler", default="k_euler_ancestral")
+        s.novelai_tag_prompt = self._get("novelai_settings", "novelai_tag_prompt", default="")
+        s.novelai_cooldown_seconds = self._get("novelai_settings", "novelai_cooldown_seconds", default=60)
+        # 高级生图参数
+        s.novelai_seed = self._get("novelai_settings", "novelai_seed", default=-1)
+        s.novelai_quality_toggle = self._get("novelai_settings", "novelai_quality_toggle", default=True)
+        s.novelai_uc_preset = self._get("novelai_settings", "novelai_uc_preset", default=0)
+        s.novelai_cfg_rescale = self._get("novelai_settings", "novelai_cfg_rescale", default=0.0)
+        s.novelai_noise_schedule = self._get("novelai_settings", "novelai_noise_schedule", default="karras")
+        s.novelai_dynamic_thresholding = self._get("novelai_settings", "novelai_dynamic_thresholding", default=False)
+        s.novelai_smea = self._get("novelai_settings", "novelai_smea", default=False)
+        s.novelai_smea_dyn = self._get("novelai_settings", "novelai_smea_dyn", default=False)
+        s.novelai_variety_boost = self._get("novelai_settings", "novelai_variety_boost", default=0.0)
+        # 参考图
+        s.novelai_use_reference = self._get("novelai_settings", "novelai_use_reference", default=False)
+        s.novelai_reference_mode = self._get("novelai_settings", "novelai_reference_mode", default="vibe_transfer")
+        s.novelai_reference_strength = self._get("novelai_settings", "novelai_reference_strength", default=0.6)
+        s.novelai_reference_info_extracted = self._get("novelai_settings", "novelai_reference_info_extracted", default=1.0)
+        s.novelai_img2img_strength = self._get("novelai_settings", "novelai_img2img_strength", default=0.6)
+        s.novelai_img2img_noise = self._get("novelai_settings", "novelai_img2img_noise", default=0.0)
+        s.novelai_director_strength = self._get("novelai_settings", "novelai_director_strength", default=0.5)
+        s.novelai_director_fidelity = self._get("novelai_settings", "novelai_director_fidelity", default=0.5)
+        s.novelai_director_info_extracted = self._get("novelai_settings", "novelai_director_info_extracted", default=1.0)
 
         return s

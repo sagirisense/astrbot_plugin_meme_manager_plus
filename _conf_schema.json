@@ -227,5 +227,209 @@
         "hint": "搜图后由 LLM 判断是否入库的筛选条件。留空不筛选。例如：可以适度暴露，但不能不穿胸罩或内裤。满足条件输出 PASS，不满足输出 REJECT"
       }
     }
+  },
+  "novelai_settings": {
+    "description": "NovelAI 生图模式（独立）",
+    "type": "object",
+    "hint": "开启后替代心情表情流程，Bot 回复时按概率触发 NovelAI 生图。所有配置与其他功能完全独立",
+    "items": {
+      "novelai_enabled": {
+        "description": "启用 NovelAI 模式",
+        "type": "bool",
+        "default": false,
+        "hint": "开启后走 NovelAI 生图流程，关闭时走原有心情表情流程。两者互斥"
+      },
+      "novelai_api_key": {
+        "description": "NovelAI API Key",
+        "type": "string",
+        "default": "",
+        "hint": "NovelAI 账号的 API Token（在 novelai.net 账号设置中获取）"
+      },
+      "novelai_model": {
+        "description": "生图模型",
+        "type": "string",
+        "default": "nai-diffusion-4-5-full",
+        "options": ["nai-diffusion-4-5-full", "nai-diffusion-4-5-curated", "nai-diffusion-4-full", "nai-diffusion-4-curated-preview", "nai-diffusion-3"],
+        "hint": "V4.5 Full 最新最强（推荐）。Opus 会员默认配置免费无限生图（832×1216, ≤28步, 纯文生图）。Precise Reference 需要 V4.5"
+      },
+      "novelai_base_tags": {
+        "description": "角色基础标签",
+        "type": "string",
+        "default": "1girl, {{{solo}}}, {{{eris boreas greyrat}}}, mushoku tensei",
+        "hint": "角色固定标签（逗号分隔），如：1girl, red hair, long hair, blue eyes, school uniform。LLM 会在此基础上补全表情/动作/场景标签"
+      },
+      "novelai_negative_prompt": {
+        "description": "负面提示词",
+        "type": "string",
+        "default": "lowres, bad anatomy, bad hands, missing fingers, extra digit, fewer digits",
+        "hint": "不希望出现的元素"
+      },
+      "novelai_probability": {
+        "description": "触发概率",
+        "type": "int",
+        "default": 30,
+        "hint": "Bot 回复后触发 NovelAI 生图的概率（0-100）"
+      },
+      "novelai_width": {
+        "description": "图片宽度",
+        "type": "int",
+        "default": 832,
+        "hint": "生成图片的宽度（像素）。Opus 免费限制：宽×高 ≤ 1048576（如 832×1216）"
+      },
+      "novelai_height": {
+        "description": "图片高度",
+        "type": "int",
+        "default": 1216,
+        "hint": "生成图片的高度（像素）。Opus 免费限制：宽×高 ≤ 1048576（如 832×1216）"
+      },
+      "novelai_steps": {
+        "description": "生成步数",
+        "type": "int",
+        "default": 28,
+        "hint": "扩散模型采样步数，越大质量越好但越慢。Opus 免费上限 28 步"
+      },
+      "novelai_scale": {
+        "description": "提示词引导强度",
+        "type": "float",
+        "default": 5.0,
+        "hint": "Prompt Guidance Scale，越大越忠于标签但可能过拟合"
+      },
+      "novelai_sampler": {
+        "description": "采样器",
+        "type": "string",
+        "default": "k_euler_ancestral",
+        "options": ["k_euler_ancestral", "k_euler", "k_dpmpp_2s_ancestral", "k_dpmpp_2m", "k_dpmpp_sde"],
+        "hint": "扩散模型采样算法"
+      },
+      "novelai_tag_prompt": {
+        "description": "LLM 标签补全提示词",
+        "type": "string",
+        "default": "",
+        "hint": "自定义 LLM 补全标签的提示词模板。需包含 {base_tags} 和 {bot_reply}。留空使用内置模板"
+      },
+      "novelai_cooldown_seconds": {
+        "description": "冷却时间（秒）",
+        "type": "int",
+        "default": 60,
+        "hint": "NovelAI 模式的独立冷却时间"
+      },
+      "novelai_seed": {
+        "description": "随机种子",
+        "type": "int",
+        "default": -1,
+        "hint": "-1 = 每次随机。填入固定值可复现同一张图（相同标签+种子=相同结果）"
+      },
+      "novelai_quality_toggle": {
+        "description": "质量标签",
+        "type": "bool",
+        "default": true,
+        "hint": "开启后自动在提示词中附加质量提升标签（best quality 等）"
+      },
+      "novelai_uc_preset": {
+        "description": "UC 预设",
+        "type": "int",
+        "default": 0,
+        "hint": "Undesired Content 预设。0=Heavy（推荐），1=Light，2=Human Focus，3=None"
+      },
+      "novelai_cfg_rescale": {
+        "description": "CFG Rescale",
+        "type": "float",
+        "default": 0.0,
+        "hint": "CFG 重缩放（0-1），用于减少高 Guidance Scale 下的过饱和/过曝。0=关闭"
+      },
+      "novelai_noise_schedule": {
+        "description": "噪声调度",
+        "type": "string",
+        "default": "karras",
+        "options": ["karras", "native", "exponential", "polyexponential"],
+        "hint": "扩散过程的噪声衰减曲线。karras 适合大多数场景"
+      },
+      "novelai_dynamic_thresholding": {
+        "description": "Decrisper",
+        "type": "bool",
+        "default": false,
+        "hint": "动态阈值（Decrisper），在高 Guidance Scale 时防止颜色过饱和"
+      },
+      "novelai_smea": {
+        "description": "SMEA",
+        "type": "bool",
+        "default": false,
+        "hint": "SMEA 采样增强（仅 V3 模型有效），提升大尺寸图片的构图质量"
+      },
+      "novelai_smea_dyn": {
+        "description": "SMEA DYN",
+        "type": "bool",
+        "default": false,
+        "hint": "动态 SMEA（仅 V3 模型有效），在 SMEA 基础上增加动态调整"
+      },
+      "novelai_variety_boost": {
+        "description": "Variety Boost",
+        "type": "float",
+        "default": 0.0,
+        "hint": "多样性增强（skip_cfg_above_sigma）。在高 sigma 阶段跳过 CFG 引导，增加构图多样性。0=关闭，推荐值 19-26"
+      },
+      "novelai_reference_image": {
+        "description": "角色参考图",
+        "type": "file",
+        "default": [],
+        "file_types": ["jpg", "jpeg", "png", "webp"],
+        "hint": "上传一张角色参考图。需开启下方「启用参考图」开关才会生效。只取第一张"
+      },
+      "novelai_use_reference": {
+        "description": "启用参考图",
+        "type": "bool",
+        "default": false,
+        "hint": "开启后才会使用上传的参考图。关闭时即使有参考图也不使用"
+      },
+      "novelai_reference_mode": {
+        "description": "参考图模式",
+        "type": "string",
+        "default": "vibe_transfer",
+        "options": ["vibe_transfer", "img2img", "director"],
+        "hint": "vibe_transfer = 提取风格/角色特征引导（V4+ 编码收 2 Anlas），img2img = 底图直接变换（收费），director = Precise Reference 精确角色参考（仅 V4.5，收 5 Anlas）"
+      },
+      "novelai_reference_strength": {
+        "description": "参考图强度（Vibe Transfer）",
+        "type": "float",
+        "default": 0.6,
+        "hint": "Vibe Transfer 模式下参考图的引导强度（0-1），越大越像参考图"
+      },
+      "novelai_reference_info_extracted": {
+        "description": "信息提取量（Vibe Transfer）",
+        "type": "float",
+        "default": 1.0,
+        "hint": "Vibe Transfer 模式下从参考图中提取的语义信息量（0-1），1.0=完整提取"
+      },
+      "novelai_img2img_strength": {
+        "description": "变换强度（img2img）",
+        "type": "float",
+        "default": 0.6,
+        "hint": "img2img 模式下 AI 偏离原图的程度（0-1），越大改动越大"
+      },
+      "novelai_img2img_noise": {
+        "description": "噪声强度（img2img）",
+        "type": "float",
+        "default": 0.0,
+        "hint": "img2img 模式下注入的额外噪声（0-1），增加随机性和细节变化"
+      },
+      "novelai_director_strength": {
+        "description": "参考强度（Director）",
+        "type": "float",
+        "default": 0.5,
+        "hint": "Precise Reference 模式下参考图的引导强度（0-1），越大越忠于参考图的风格和角色特征"
+      },
+      "novelai_director_fidelity": {
+        "description": "保真度（Director）",
+        "type": "float",
+        "default": 0.5,
+        "hint": "Precise Reference 模式下的精确度（0-1），越大越严格还原参考图"
+      },
+      "novelai_director_info_extracted": {
+        "description": "信息提取量（Director）",
+        "type": "float",
+        "default": 1.0,
+        "hint": "Precise Reference 模式下从参考图中提取的信息量（0-1）"
+      }
+    }
   }
 }

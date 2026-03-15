@@ -19,6 +19,7 @@ from .core.library_manager import LibraryManager
 from .core.mood_analyzer import MoodAnalyzer
 from .core.image_manager import MoodImageManager
 from .core.auto_updater import AutoUpdater
+from .core.novelai_generator import NovelAIGenerator
 from .utils.cooldown_manager import CooldownManager
 
 
@@ -97,6 +98,12 @@ class MoodMemePlugin(Star):
         self.trash_dir = self.plugin_dir / "trash"
         self.trash_dir.mkdir(parents=True, exist_ok=True)
 
+        # NovelAI 生图模式（独立）
+        self.novelai_gen = NovelAIGenerator(self.settings, context, self.plugin_dir)
+        self.novelai_cooldown = CooldownManager(
+            self.settings.novelai_cooldown_seconds, self.settings.per_group
+        )
+
         # 记录每个会话最近发送的图片路径和消息ID，用于 /删图
         # 格式: {unified_msg_origin: (file_path, message_id_or_None)}
         self._last_sent: dict[str, tuple[Path, str | int | None]] = {}
@@ -122,6 +129,19 @@ class MoodMemePlugin(Star):
 
         session_id = event.session_id
         group_id = str(getattr(event.message_obj, "group_id", "")) or None
+
+        # NovelAI 模式：开启时走独立流程，跳过心情表情
+        if self.settings.novelai_enabled:
+            if not self.novelai_cooldown.can_trigger(session_id, group_id):
+                logger.info(f"[MemeMemPlus-NAI] 冷却中，跳过 (session={session_id})")
+                return
+            if random.randint(1, 100) > self.settings.novelai_probability:
+                logger.info("[MemeMemPlus-NAI] 概率未命中，跳过")
+                return
+            asyncio.create_task(
+                self._novelai_generate_and_send(event, response.completion_text, session_id, group_id)
+            )
+            return
 
         if not self.cooldown.can_trigger(session_id, group_id):
             logger.info(f"[MemeMemPlus] 冷却中，跳过 (session={session_id})")
@@ -208,6 +228,25 @@ class MoodMemePlugin(Star):
 
         except Exception:
             logger.error(f"[MemeMemPlus] 后台任务异常: {traceback.format_exc()}")
+
+    async def _novelai_generate_and_send(
+        self, event: AstrMessageEvent, text: str,
+        session_id: str, group_id: str | None,
+    ) -> None:
+        """NovelAI 后台任务：LLM 补全标签 → NAI API 生图 → 发送。"""
+        try:
+            logger.info("[MemeMemPlus-NAI] 开始生图流程")
+            image_bytes, save_path = await self.novelai_gen.run(text)
+            if not image_bytes:
+                logger.warning("[MemeMemPlus-NAI] 生图失败")
+                return
+
+            await self._send_image(event, image_bytes)
+            self.novelai_cooldown.record(session_id, group_id)
+            logger.info(f"[MemeMemPlus-NAI] 生图完成并发送, saved={save_path}")
+
+        except Exception:
+            logger.error(f"[MemeMemPlus-NAI] 后台任务异常: {traceback.format_exc()}")
 
     def _to_sticker(self, image_bytes: bytes, size: int = 200) -> bytes:
         """将图片等比缩放到正方形内，透明填充空白区域，输出 GIF。"""
@@ -304,6 +343,13 @@ class MoodMemePlugin(Star):
             f"大模型生图: {'开启' if self.settings.llm_generation_enabled else '关闭'}",
             f"生图概率: {self.settings.llm_generation_probability}%",
             f"图库: {len(stats)} 个心情, {non_empty} 个有参考图, 共 {total} 张",
+            "",
+            f"--- NovelAI 模式 ---",
+            f"状态: {'开启（替代心情表情）' if self.settings.novelai_enabled else '关闭'}",
+            f"参考图: {'已上传' if self.novelai_gen.has_reference else '未上传'}"
+            f"{'（' + {'img2img': 'img2img', 'director': 'Precise Ref', 'vibe_transfer': 'Vibe Transfer'}.get(self.settings.novelai_reference_mode, self.settings.novelai_reference_mode) + '）' if self.settings.novelai_use_reference else '（未启用）'}",
+            f"触发概率: {self.settings.novelai_probability}%",
+            f"冷却: {self.settings.novelai_cooldown_seconds}秒",
             "",
             f"--- 自动搜图 ---",
             f"状态: {'运行中' if self.auto_updater.running else '已关闭'}",
@@ -497,3 +543,4 @@ class MoodMemePlugin(Star):
         except Exception:
             logger.warning(f"[MemeMemPlus] 图片匹配失败: {traceback.format_exc()}")
             return None
+
