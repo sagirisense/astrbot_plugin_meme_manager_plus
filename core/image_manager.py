@@ -12,6 +12,8 @@ from astrbot.api import logger
 from astrbot.core.provider.entities import ProviderType
 
 from ..config.settings import PluginSettings
+from ..utils.provider_helper import DEFAULT_GEMINI_BASE
+from ..utils.llm_client import LLMClient
 
 # MIME 类型映射
 MIME_MAP = {
@@ -23,7 +25,6 @@ MIME_MAP = {
     ".bmp": "image/bmp",
 }
 
-DEFAULT_GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
 DEFAULT_GROK_BASE = "https://api.x.ai/v1"
 
 
@@ -144,11 +145,7 @@ class MoodImageManager:
 
         parts.append({"text": prompt})
 
-        api_base = self._api_base
-        if not api_base.endswith(("/v1beta", "/v1")):
-            url = f"{api_base}/v1beta/models/{self._model}:generateContent"
-        else:
-            url = f"{api_base}/models/{self._model}:generateContent"
+        url = LLMClient.build_gemini_url(self._api_base, self._model)
 
         headers = {"x-goog-api-key": self._api_key, "Content-Type": "application/json"}
         image_config = {"imageSize": self.settings.resolution or "1K"}

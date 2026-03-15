@@ -1,3 +1,4 @@
+import hashlib
 import random
 from pathlib import Path
 
@@ -23,6 +24,7 @@ class LibraryManager:
     def __init__(self, library_dir: Path):
         self.library_dir = library_dir
         self._cache: dict[str, list[Path]] = {}
+        self._initialized = False
 
     def initialize(self) -> None:
         """创建预设心情目录，扫描所有子目录中的图片。"""
@@ -34,6 +36,7 @@ class LibraryManager:
             mood_dir.mkdir(exist_ok=True)
 
         self.refresh()
+        self._initialized = True
 
     def refresh(self) -> None:
         """重新扫描图库，更新缓存。"""
@@ -55,13 +58,13 @@ class LibraryManager:
         total = sum(stats.values())
         non_empty = sum(1 for v in stats.values() if v > 0)
         logger.info(
-            f"[MemeGenPlus] 图库扫描完成: {len(stats)} 个心情, "
+            f"[MemeMemPlus] 图库扫描完成: {len(stats)} 个心情, "
             f"{non_empty} 个有参考图, 共 {total} 张图片"
         )
 
     def get_all_moods(self) -> list[str]:
         """返回所有可用心情标签（来自目录扫描，含自定义）。"""
-        if not self._cache:
+        if not self._initialized:
             self.refresh()
         return list(self._cache.keys())
 
@@ -83,3 +86,15 @@ class LibraryManager:
     def get_stats(self) -> dict[str, int]:
         """返回各心情目录的图片数量统计。"""
         return {mood: len(images) for mood, images in self._cache.items()}
+
+    def find_by_hash(self, image_bytes: bytes) -> Path | None:
+        """通过 MD5 哈希在图库中查找匹配的图片文件。"""
+        target_hash = hashlib.md5(image_bytes).hexdigest()
+        for images in self._cache.values():
+            for img_path in images:
+                try:
+                    if hashlib.md5(img_path.read_bytes()).hexdigest() == target_hash:
+                        return img_path
+                except Exception:
+                    continue
+        return None

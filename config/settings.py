@@ -37,11 +37,6 @@ DEFAULT_REFERENCE_ADDON = (
     "Match the exact art style precisely."
 )
 
-DEFAULT_MOODS = [
-    "happy", "sad", "angry", "surprised", "shy",
-    "confused", "neutral", "sigh", "cute", "excited",
-]
-
 
 @dataclass
 class PluginSettings:
@@ -58,16 +53,20 @@ class PluginSettings:
     # Mood analysis
     mood_provider_id: str = ""
     custom_mood_prompt: str = ""
+    llm_timeout: int = 30
 
     # Probability
-    default_probability: int = 20
+    expression_threshold: float = 0.65
     llm_generation_enabled: bool = True
     llm_generation_probability: int = 30
 
     # Generation
     image_prompt_template: str = DEFAULT_IMAGE_PROMPT
     reference_prompt_addon: str = DEFAULT_REFERENCE_ADDON
-    max_images_per_mood: int = 20
+    max_library_size: int = 0  # 0=不限制
+
+    # Sticker
+    sticker_mode: bool = False
 
     # Cooldown
     cooldown_seconds: int = 60
@@ -81,6 +80,10 @@ class PluginSettings:
     auto_update_source: str = "danbooru"
     auto_update_min_score: int = 10
     auto_update_filter_prompt: str = ""
+    pixiv_refresh_token: str = ""
+    pixiv_search_keyword: str = ""
+    pixiv_search_target: str = "partial_match_for_tags"
+    pixiv_allow_r18: bool = False
 
 
 class ConfigLoader:
@@ -115,9 +118,10 @@ class ConfigLoader:
         # Mood analysis
         s.mood_provider_id = self._get("mood_analysis_settings", "mood_provider_id", default="")
         s.custom_mood_prompt = self._get("mood_analysis_settings", "custom_mood_prompt", default="")
+        s.llm_timeout = self._get("mood_analysis_settings", "llm_timeout", default=30)
 
         # Probability
-        s.default_probability = self._get("probability_settings", "default_probability", default=20)
+        s.expression_threshold = self._get("probability_settings", "expression_threshold", default=0.65)
         s.llm_generation_enabled = self._get("probability_settings", "llm_generation_enabled", default=True)
         s.llm_generation_probability = self._get("probability_settings", "llm_generation_probability", default=30)
 
@@ -128,9 +132,9 @@ class ConfigLoader:
         s.reference_prompt_addon = self._get(
             "generation_settings", "reference_prompt_addon", default=DEFAULT_REFERENCE_ADDON
         )
-        s.max_images_per_mood = self._get(
-            "generation_settings", "max_images_per_mood", default=20
-        )
+        s.max_library_size = self._get("generation_settings", "max_library_size", default=0)
+        # Sticker
+        s.sticker_mode = self._get("generation_settings", "sticker_mode", default=False)
 
         # Cooldown
         s.cooldown_seconds = self._get("cooldown_settings", "cooldown_seconds", default=60)
@@ -144,5 +148,9 @@ class ConfigLoader:
         s.auto_update_source = self._get("auto_update_settings", "auto_update_source", default="danbooru")
         s.auto_update_min_score = self._get("auto_update_settings", "auto_update_min_score", default=10)
         s.auto_update_filter_prompt = self._get("auto_update_settings", "auto_update_filter_prompt", default="")
+        s.pixiv_refresh_token = self._get("auto_update_settings", "pixiv_refresh_token", default="")
+        s.pixiv_search_keyword = self._get("auto_update_settings", "pixiv_search_keyword", default="")
+        s.pixiv_search_target = self._get("auto_update_settings", "pixiv_search_target", default="partial_match_for_tags")
+        s.pixiv_allow_r18 = self._get("auto_update_settings", "pixiv_allow_r18", default=False)
 
         return s

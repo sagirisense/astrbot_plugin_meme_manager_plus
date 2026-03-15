@@ -1,11 +1,11 @@
+import random
 import traceback
-
-import aiohttp
 
 from astrbot.api import logger
 
 from ..config.settings import DEFAULT_MOOD_PROMPT
-from ..utils.provider_helper import load_mood_provider, LLMApiConfig
+from ..utils.provider_helper import load_mood_provider
+from ..utils.llm_client import LLMClient
 
 
 class MoodAnalyzer:
@@ -47,105 +47,22 @@ class MoodAnalyzer:
         logger.info(f"[MemeMemPlus] 情绪分析请求: model={cfg.model}, gemini={cfg.is_gemini}")
 
         try:
-            timeout = aiohttp.ClientTimeout(total=30)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                if cfg.is_gemini:
-                    result_text = await self._call_gemini(session, cfg, prompt, system_msg)
-                else:
-                    result_text = await self._call_openai(session, cfg, prompt, system_msg)
+            result_text = await LLMClient.call(
+                cfg, prompt,
+                system_msg=system_msg,
+                max_tokens=50,
+                timeout=self.settings.llm_timeout,
+            )
+            if not result_text:
+                logger.warning("[MemeMemPlus] 情绪分析 API 返回为空")
+                return 0.0, None
 
-                if not result_text:
-                    logger.warning("[MemeMemPlus] 情绪分析 API 返回为空")
-                    return 0.0, None
+            logger.info(f"[MemeMemPlus] LLM 原始返回: '{result_text}'")
+            return self._parse_result(result_text, available_moods)
 
-                return self._parse_result(result_text, available_moods)
-
-        except aiohttp.ClientError as e:
-            logger.error(f"[MemeMemPlus] 情绪分析网络错误: {e}")
-            return 0.0, None
         except Exception:
             logger.error(f"[MemeMemPlus] 情绪分析异常: {traceback.format_exc()}")
             return 0.0, None
-
-    async def _call_gemini(
-        self, session: aiohttp.ClientSession, cfg: LLMApiConfig,
-        prompt: str, system_msg: str,
-    ) -> str | None:
-        """Gemini API 调用。"""
-        api_base = cfg.api_base
-        if not api_base.endswith(("/v1beta", "/v1")):
-            url = f"{api_base}/v1beta/models/{cfg.model}:generateContent"
-        else:
-            url = f"{api_base}/models/{cfg.model}:generateContent"
-
-        headers = {"x-goog-api-key": cfg.api_key, "Content-Type": "application/json"}
-        payload = {
-            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-            "generationConfig": {"maxOutputTokens": 256, "temperature": 0.1},
-            "systemInstruction": {"parts": [{"text": system_msg}]},
-        }
-
-        async with session.post(url, headers=headers, json=payload) as resp:
-            if resp.status != 200:
-                error_text = await resp.text()
-                logger.error(f"[MemeMemPlus] Gemini API 错误 {resp.status}: {error_text[:200]}")
-                return None
-            data = await resp.json()
-            candidates = data.get("candidates", [])
-            if not candidates:
-                logger.warning(f"[MemeMemPlus] Gemini 返回无 candidates: {str(data)[:300]}")
-                return None
-            for part in candidates[0].get("content", {}).get("parts", []):
-                if "text" in part:
-                    raw = part["text"].strip()
-                    logger.info(f"[MemeMemPlus] Gemini 原始返回: '{raw}'")
-                    return raw
-            logger.warning(f"[MemeMemPlus] Gemini candidates 中无 text: {str(candidates[0])[:200]}")
-        return None
-
-    async def _call_openai(
-        self, session: aiohttp.ClientSession, cfg: LLMApiConfig,
-        prompt: str, system_msg: str,
-    ) -> str | None:
-        """OpenAI 兼容 API 调用。"""
-        api_base = cfg.api_base
-        if not api_base.endswith("/v1"):
-            url = f"{api_base}/v1/chat/completions"
-        else:
-            url = f"{api_base}/chat/completions"
-
-        headers = {"Authorization": f"Bearer {cfg.api_key}", "Content-Type": "application/json"}
-        payload = {
-            "model": cfg.model,
-            "messages": [
-                {"role": "system", "content": system_msg},
-                {"role": "user", "content": prompt},
-            ],
-            "max_tokens": 50,
-        }
-
-        logger.debug(f"[MemeMemPlus] OpenAI 请求: url={url}, model={cfg.model}")
-
-        async with session.post(url, headers=headers, json=payload) as resp:
-            logger.debug(f"[MemeMemPlus] OpenAI 响应: status={resp.status}")
-            if resp.status != 200:
-                error_text = await resp.text()
-                logger.error(f"[MemeMemPlus] OpenAI API 错误 {resp.status}: {error_text[:200]}")
-                return None
-            data = await resp.json()
-            choices = data.get("choices", [])
-            if not choices:
-                logger.debug("[MemeMemPlus] OpenAI 响应无 choices")
-                return None
-            msg = choices[0].get("message", {})
-            content = msg.get("content", "").strip()
-            if not content:
-                content = msg.get("reasoning_content", "").strip()
-            if content and "\n" in content:
-                content = content.strip().split("\n")[-1].strip()
-            logger.debug(f"[MemeMemPlus] OpenAI 返回内容: '{content}'")
-            return content
-        return None
 
     def _parse_result(
         self, result: str, available_moods: list[str]
@@ -192,7 +109,6 @@ class MoodAnalyzer:
             pass
 
         # 4) 全部失败，随机选一个并降低 score
-        import random
         fallback = random.choice(available_moods)
         logger.warning(f"[MemeMemPlus] 情绪分析无法解析 '{result}', 随机回退: mood={fallback}")
         return 0.3, fallback

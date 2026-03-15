@@ -53,14 +53,14 @@
     }
   },
   "mood_analysis_settings": {
-    "description": "情绪分析设置",
+    "description": "LLM 分析设置",
     "type": "object",
-    "hint": "配置用于分析 Bot 回复情绪的 LLM",
+    "hint": "配置用于情绪分析、搜图分类、内容筛选的 LLM 提供商",
     "items": {
       "mood_provider_id": {
-        "description": "情绪分析提供商",
+        "description": "LLM 提供商",
         "type": "string",
-        "hint": "用于分析情绪的 LLM 提供商，建议选择快速/便宜的模型",
+        "hint": "用于情绪分析、图片分类和筛选的 LLM，建议选择快速/便宜的模型（如 Gemini Flash）",
         "_special": "select_provider",
         "default": ""
       },
@@ -69,19 +69,25 @@
         "type": "string",
         "hint": "自定义分析提示词，留空使用默认。需包含 {categories} 占位符",
         "default": ""
+      },
+      "llm_timeout": {
+        "description": "LLM 请求超时（秒）",
+        "type": "int",
+        "default": 30,
+        "hint": "情绪分析、图片分类、内容筛选等 LLM 请求的超时时间（不含生图）"
       }
     }
   },
   "probability_settings": {
     "description": "触发概率设置",
     "type": "object",
-    "hint": "两级概率：先判断是否触发表情发送，再判断是否调用大模型生成新图",
+    "hint": "LLM 分析回复语境后给出表达欲望评分（0-1），超过门槛则发图；发图后再以随机概率决定是否额外生图入库",
     "items": {
-      "default_probability": {
-        "description": "触发概率",
-        "type": "int",
-        "default": 20,
-        "hint": "每次 Bot 回复后触发表情发送的概率（0-100），命中后才会调用 LLM 判断心情并发图"
+      "expression_threshold": {
+        "description": "表达欲望门槛",
+        "type": "float",
+        "default": 0.65,
+        "hint": "LLM 对每条回复评估表达欲望（0-1），评分 >= 此值才触发发图。0=每次都发，1=永不发。建议 0.3-0.8"
       },
       "llm_generation_enabled": {
         "description": "启用大模型生图",
@@ -93,7 +99,7 @@
         "description": "大模型生图概率",
         "type": "int",
         "default": 30,
-        "hint": "触发后，再以此概率决定是否调用大模型生成新图（0-100）。未命中则直接从图库抽取已有图片"
+        "hint": "发图后，以此随机概率决定是否额外调用大模型生成新图入库（0-100）"
       }
     }
   },
@@ -114,11 +120,17 @@
         "hint": "当有参考图时追加的提示词",
         "default": "CRITICAL: Study ALL provided reference images carefully. The generated image MUST depict THE EXACT SAME CHARACTER with identical facial features, hairstyle, art style. Only change the expression to match the mood."
       },
-      "max_images_per_mood": {
-        "description": "每个心情最大图片数",
+      "sticker_mode": {
+        "description": "表情包模式",
+        "type": "bool",
+        "default": false,
+        "hint": "开启后将图片缩放为 200x200 正方形再发送，QQ 会以表情包样式展示（小图、无边框、点击不放大）"
+      },
+      "max_library_size": {
+        "description": "图库总上限",
         "type": "int",
-        "default": 20,
-        "hint": "当某心情目录图片数达到此值后，不再生成新图，改为随机抽取已有图片。0=不限制"
+        "default": 0,
+        "hint": "图库总图片数达到此值后，停止自动搜图和 LLM 生图。0=不限制"
       }
     }
   },
@@ -144,7 +156,7 @@
   "auto_update_settings": {
     "description": "自动图库更新",
     "type": "object",
-    "hint": "定时从 Booru 图站搜索角色图片，LLM 自动分类心情后加入图库（不受每心情上限限制）",
+    "hint": "定时从 Booru/Pixiv 搜索角色图片，LLM 自动分类心情后加入图库",
     "items": {
       "auto_update_enabled": {
         "description": "启用自动更新",
@@ -168,20 +180,45 @@
         "description": "每次搜索图片数",
         "type": "int",
         "default": 5,
-        "hint": "每次自动更新搜索并下载的图片数量（1-20）"
+        "hint": "每次自动更新搜索并下载的图片数量（1-50）"
       },
       "auto_update_source": {
         "description": "图片来源",
         "type": "string",
         "default": "danbooru",
-        "options": ["danbooru", "yandere", "konachan"],
-        "hint": "danbooru=danbooru.donmai.us（图最多），yandere=yande.re（高清），konachan=konachan.com"
+        "options": ["danbooru", "yandere", "konachan", "pixiv"],
+        "hint": "danbooru=danbooru.donmai.us（图最多），yandere=yande.re（高清），konachan=konachan.com，pixiv=pixiv.net（需要 refresh_token）"
       },
       "auto_update_min_score": {
         "description": "最低评分",
         "type": "int",
         "default": 10,
-        "hint": "只下载评分高于此值的图片，过滤低质量内容"
+        "hint": "只下载评分高于此值的图片，过滤低质量内容（Pixiv 使用收藏数）"
+      },
+      "pixiv_refresh_token": {
+        "description": "Pixiv Refresh Token",
+        "type": "string",
+        "default": "",
+        "hint": "使用 Pixiv 图源时必填。通过 gppt login 命令获取"
+      },
+      "pixiv_search_keyword": {
+        "description": "Pixiv 搜索关键词",
+        "type": "string",
+        "default": "",
+        "hint": "（仅 Pixiv）完整的搜索词，空格分隔多个关键词表示同时包含。例如：エリス・ボレアス・グレイラット 無職転生。注意：填写后会完全替代上方的搜索标签，不会合并。留空则使用上方的搜索标签"
+      },
+      "pixiv_search_target": {
+        "description": "Pixiv 搜索模式",
+        "type": "string",
+        "default": "partial_match_for_tags",
+        "options": ["partial_match_for_tags", "exact_match_for_tags", "title_and_caption"],
+        "hint": "partial_match_for_tags=标签部分匹配（推荐），exact_match_for_tags=标签精确匹配，title_and_caption=标题和简介含有关键词（结果杂）"
+      },
+      "pixiv_allow_r18": {
+        "description": "允许 Pixiv R-18",
+        "type": "bool",
+        "default": false,
+        "hint": "关闭时自动过滤 R-18/R-18G 作品，只搜全年龄内容"
       },
       "auto_update_filter_prompt": {
         "description": "搜图筛选提示词",

@@ -1,5 +1,8 @@
 import asyncio
+import hashlib
+import io
 import random
+import shutil
 import traceback
 from pathlib import Path
 
@@ -17,6 +20,42 @@ from .core.mood_analyzer import MoodAnalyzer
 from .core.image_manager import MoodImageManager
 from .core.auto_updater import AutoUpdater
 from .utils.cooldown_manager import CooldownManager
+
+
+def _format_search_result(result: dict, prefix: str = "搜图") -> str:
+    """将 auto_updater._run_once() 返回的 dict 格式化为用户消息。"""
+    if "skipped" in result:
+        reason = result["skipped"]
+        if reason == "busy":
+            return "已有搜图任务在执行中，请等待完成后再试"
+        if reason == "library_full":
+            return f"图库已达上限（{result.get('total', '?')} 张），跳过搜图"
+        if reason == "no_moods":
+            return "无可用心情分类目录，请先创建心情文件夹"
+        return f"{prefix}被跳过: {reason}"
+
+    saved = result.get("saved", 0)
+    searched = result.get("searched", 0)
+    if searched == 0:
+        return f"{prefix}完成，未找到新图片"
+
+    lines = [f"{prefix}完成，入库 {saved}/{searched} 张"]
+    dl_fail = result.get("dl_fail", 0)
+    filtered = result.get("filtered", 0)
+    mood_fail = result.get("mood_fail", 0)
+    details = []
+    if dl_fail:
+        details.append(f"下载失败 {dl_fail}")
+    if filtered:
+        details.append(f"筛选拒绝 {filtered}")
+    if mood_fail:
+        details.append(f"分类失败 {mood_fail}")
+    if details:
+        lines.append("（" + "，".join(details) + "）")
+    total = result.get("total")
+    if total is not None:
+        lines.append(f"图库总计: {total} 张")
+    return "\n".join(lines)
 
 
 @register(
@@ -54,6 +93,15 @@ class MoodMemePlugin(Star):
         if self.settings.auto_update_enabled:
             self.auto_updater.start()
 
+        # 删图功能：trash 目录（放在插件根目录，不在 memes/ 下）
+        self.trash_dir = self.plugin_dir / "trash"
+        self.trash_dir.mkdir(parents=True, exist_ok=True)
+
+        # 记录每个会话最近发送的图片路径和消息ID，用于 /删图
+        # 格式: {unified_msg_origin: (file_path, message_id_or_None)}
+        self._last_sent: dict[str, tuple[Path, str | int | None]] = {}
+        self._MAX_LAST_SENT = 200  # 防止内存泄漏
+
         logger.info(
             f"[MemeMemPlus] 插件初始化完成, "
             f"启用={self.settings.enabled}, "
@@ -79,14 +127,14 @@ class MoodMemePlugin(Star):
             logger.info(f"[MemeMemPlus] 冷却中，跳过 (session={session_id})")
             return
 
-        # 概率判定移到情绪分析之后，先启动后台任务
-        self.cooldown.record(session_id, group_id)
+        # 冷却在实际发送图片后才记录，避免分析失败也消耗冷却
         asyncio.create_task(
-            self._generate_and_send(event, response.completion_text)
+            self._generate_and_send(event, response.completion_text, session_id, group_id)
         )
 
     async def _generate_and_send(
-        self, event: AstrMessageEvent, text: str
+        self, event: AstrMessageEvent, text: str,
+        session_id: str, group_id: str | None,
     ) -> None:
         """后台任务：情绪分析 + 表达欲望判定 → 可选生图 → 抽图发送。"""
         try:
@@ -101,16 +149,16 @@ class MoodMemePlugin(Star):
                 logger.info(f"[MemeMemPlus] 情绪分析未匹配: score={score:.2f}")
                 return
 
-            # 第一级：触发概率（表达欲望）
-            threshold = 1.0 - self.settings.default_probability / 100.0
-            if score <= threshold:
+            # 第一级：表达欲望门槛
+            threshold = self.settings.expression_threshold
+            if score < threshold:
                 logger.info(
-                    f"[MemeMemPlus] 表达欲望不足: score={score:.2f} <= {threshold:.2f}, mood={mood}"
+                    f"[MemeMemPlus] 表达欲望不足: score={score:.2f} < {threshold:.2f}, mood={mood}"
                 )
                 return
 
             logger.info(
-                f"[MemeMemPlus] 触发表情: score={score:.2f} > {threshold:.2f}, mood={mood}"
+                f"[MemeMemPlus] 触发表情: score={score:.2f} >= {threshold:.2f}, mood={mood}"
             )
 
             # 先从该心情目录随机抽一张发送（不被生图阻塞）
@@ -121,58 +169,114 @@ class MoodMemePlugin(Star):
                 picked = random.choice(all_images)
                 image_bytes = picked.read_bytes()
                 logger.info(f"[MemeMemPlus] 随机抽取: {picked.name}, mood={mood}")
-                await self._send_image(event, image_bytes)
+                sent_msg_id = await self._send_image(event, image_bytes)
+                self._last_sent[event.unified_msg_origin] = (picked, sent_msg_id)
+                # 防止 _last_sent 无限增长
+                if len(self._last_sent) > self._MAX_LAST_SENT:
+                    oldest_key = next(iter(self._last_sent))
+                    del self._last_sent[oldest_key]
+                # 实际发送成功后才记录冷却
+                self.cooldown.record(session_id, group_id)
 
             # 第二级：LLM 生图概率（独立判定，发送后再生图入库）
             if (
                 self.settings.llm_generation_enabled
                 and random.randint(1, 100) <= self.settings.llm_generation_probability
             ):
-                ref_paths = self.library_mgr.get_all_references(mood)
-                max_images = self.settings.max_images_per_mood
-
-                if max_images <= 0 or len(ref_paths) < max_images:
-                    sample_refs = ref_paths
-                    if len(sample_refs) > 3:
-                        sample_refs = random.sample(sample_refs, 3)
-
-                    logger.info(
-                        f"[MemeMemPlus] LLM生图命中: mood={mood}, "
-                        f"mode={'图生图' if sample_refs else '文生图'}"
-                    )
-
+                # 图库总上限检查
+                max_lib = self.settings.max_library_size
+                if max_lib > 0:
+                    total = sum(self.library_mgr.get_stats().values())
+                    if total >= max_lib:
+                        logger.info(f"[MemeMemPlus] 图库已达上限({total}>={max_lib})，跳过生图")
+                    else:
+                        ref_paths = self.library_mgr.get_all_references(mood)
+                        sample_refs = random.sample(ref_paths, 3) if len(ref_paths) > 3 else ref_paths
+                        logger.info(f"[MemeMemPlus] LLM生图命中: mood={mood}, mode={'图生图' if sample_refs else '文生图'}")
+                        gen_bytes = await self.image_mgr.generate(mood, sample_refs or None)
+                        if gen_bytes:
+                            self._save_generated_image(mood, gen_bytes)
+                else:
+                    ref_paths = self.library_mgr.get_all_references(mood)
+                    sample_refs = random.sample(ref_paths, 3) if len(ref_paths) > 3 else ref_paths
+                    logger.info(f"[MemeMemPlus] LLM生图命中: mood={mood}, mode={'图生图' if sample_refs else '文生图'}")
                     gen_bytes = await self.image_mgr.generate(mood, sample_refs or None)
                     if gen_bytes:
                         self._save_generated_image(mood, gen_bytes)
-                else:
-                    logger.info(
-                        f"[MemeMemPlus] 图库已满({len(ref_paths)}>={max_images})，跳过生图"
-                    )
             else:
                 logger.info(f"[MemeMemPlus] LLM生图未命中或已关闭, mood={mood}")
 
         except Exception:
             logger.error(f"[MemeMemPlus] 后台任务异常: {traceback.format_exc()}")
 
-    async def _send_image(self, event: AstrMessageEvent, image_bytes: bytes) -> None:
-        """发送图片到对应会话。"""
+    def _to_sticker(self, image_bytes: bytes, size: int = 200) -> bytes:
+        """将图片等比缩放到正方形内，透明填充空白区域，输出 GIF。"""
+        from PIL import Image as PILImage
+        img = PILImage.open(io.BytesIO(image_bytes))
+        # 等比缩放，使最长边 = size，保留完整画面
+        w, h = img.size
+        ratio = size / max(w, h)
+        new_w, new_h = int(w * ratio), int(h * ratio)
+        img = img.resize((new_w, new_h), PILImage.LANCZOS)
+        # 创建透明画布，居中粘贴
+        canvas = PILImage.new("RGBA", (size, size), (0, 0, 0, 0))
+        offset_x = (size - new_w) // 2
+        offset_y = (size - new_h) // 2
+        # 确保 img 有 alpha 通道再粘贴
+        if img.mode != "RGBA":
+            img = img.convert("RGBA")
+        canvas.paste(img, (offset_x, offset_y), img)
+        buf = io.BytesIO()
+        # GIF 只支持调色板单色透明：提取 alpha → 转 P 模式 → 指定透明索引
+        alpha = canvas.split()[3]  # 提取 alpha 通道
+        canvas = canvas.convert("RGB").convert("P", palette=PILImage.ADAPTIVE, colors=255)
+        # 找到未使用的调色板索引作为透明色（用 255）
+        mask = PILImage.eval(alpha, lambda a: 255 if a <= 128 else 0)
+        canvas.paste(255, mask=mask)
+        canvas.save(buf, format="GIF", transparency=255)
+        return buf.getvalue()
+
+    async def _send_image(self, event: AstrMessageEvent, image_bytes: bytes) -> str | int | None:
+        """发送图片到对应会话，返回 message_id（如果平台支持）。"""
         try:
-            if event.get_platform_name() == "gewechat":
-                await event.send(
-                    MessageChain([Image.fromBytes(image_bytes)])
-                )
+            # 表情包模式：缩放为小图
+            if getattr(self.settings, "sticker_mode", False):
+                image_bytes = self._to_sticker(image_bytes)
+            msg_id = None
+            # aiocqhttp: 直接调用 bot API 以获取 message_id
+            if hasattr(event, "bot") and hasattr(event.bot, "send_group_msg"):
+                import base64 as b64mod
+                b64_str = b64mod.b64encode(image_bytes).decode()
+                seg = {"type": "image", "data": {"file": f"base64://{b64_str}"}}
+                # 表情包模式：subType=7 让 QQ 以表情包形式展示
+                if getattr(self.settings, "sticker_mode", False):
+                    seg["data"]["subType"] = "7"
+                group_id = event.get_group_id()
+                if group_id:
+                    ret = await event.bot.send_group_msg(
+                        group_id=int(group_id), message=[seg]
+                    )
+                else:
+                    ret = await event.bot.send_private_msg(
+                        user_id=int(event.get_sender_id()), message=[seg]
+                    )
+                if isinstance(ret, dict):
+                    msg_id = ret.get("message_id")
+            elif event.get_platform_name() == "gewechat":
+                await event.send(MessageChain([Image.fromBytes(image_bytes)]))
             else:
                 await self.context.send_message(
                     event.unified_msg_origin,
                     MessageChain([Image.fromBytes(image_bytes)]),
                 )
-            logger.info("[MemeMemPlus] 表情图片已发送")
+            logger.info(f"[MemeMemPlus] 表情图片已发送, msg_id={msg_id}")
+            return msg_id
         except Exception:
             logger.error(f"[MemeMemPlus] 发送图片失败: {traceback.format_exc()}")
+            return None
 
     def _save_generated_image(self, mood: str, image_bytes: bytes) -> None:
         """将生成的图片保存到对应心情目录，并刷新缓存。"""
-        import hashlib
         mood_dir = self.library_dir / mood
         mood_dir.mkdir(parents=True, exist_ok=True)
         name = hashlib.md5(image_bytes).hexdigest()[:12]
@@ -196,10 +300,9 @@ class MoodMemePlugin(Star):
             f"状态: {'启用' if self.settings.enabled else '禁用'}",
             f"模型: {self.settings.model}",
             f"冷却: {self.settings.cooldown_seconds}秒",
-            f"触发概率: {self.settings.default_probability}%",
+            f"表达门槛: {self.settings.expression_threshold}",
             f"大模型生图: {'开启' if self.settings.llm_generation_enabled else '关闭'}",
             f"生图概率: {self.settings.llm_generation_probability}%",
-            f"每心情上限: {self.settings.max_images_per_mood}",
             f"图库: {len(stats)} 个心情, {non_empty} 个有参考图, 共 {total} 张",
             "",
             f"--- 自动搜图 ---",
@@ -213,11 +316,8 @@ class MoodMemePlugin(Star):
         ]
 
         for mood, count in sorted(stats.items()):
-            max_img = self.settings.max_images_per_mood
             if count == 0:
                 mode = "空（不发送）"
-            elif max_img > 0 and count >= max_img:
-                mode = "已满，仅抽取"
             else:
                 mode = "抽取" + ("＋可生图" if self.settings.llm_generation_enabled else "")
             lines.append(f"  {mood}: {count}张 ({mode})")
@@ -226,12 +326,15 @@ class MoodMemePlugin(Star):
 
     @filter.command("心情表情刷新")
     async def refresh_library(self, event: AstrMessageEvent):
-        """重新扫描图库目录。"""
+        """重新扫描图库目录，同步已删除图片的黑名单。"""
         self.library_mgr.refresh()
+        self.auto_updater._seen_ids = self.auto_updater._load_seen_ids()
         stats = self.library_mgr.get_stats()
         total = sum(stats.values())
+        blocked = len(self.auto_updater._seen_ids)
         yield event.plain_result(
-            f"图库已刷新: {len(stats)} 个心情, 共 {total} 张参考图"
+            f"图库已刷新: {len(stats)} 个心情, 共 {total} 张参考图\n"
+            f"已记录 {blocked} 个 booru ID（含回收站）"
         )
 
     @filter.command("自动搜图开启")
@@ -262,26 +365,135 @@ class MoodMemePlugin(Star):
     async def run_auto_update_now(self, event: AstrMessageEvent):
         """立即执行一次自动搜图。"""
         yield event.plain_result("开始搜图，请稍候...")
-        asyncio.create_task(self.auto_updater._run_once())
+
+        async def _do_update():
+            result = await self.auto_updater._run_once()
+            try:
+                msg = _format_search_result(result, prefix="自动搜图")
+                await self.context.send_message(
+                    event.unified_msg_origin,
+                    MessageChain().message(msg),
+                )
+            except Exception:
+                logger.error(f"[MemeMemPlus] 发送搜图结果失败: {traceback.format_exc()}")
+
+        asyncio.create_task(_do_update())
 
     @filter.command("搜图")
     async def manual_search(self, event: AstrMessageEvent, count: int = 5):
         """手动搜图：搜图 N，使用配置的标签搜索 N 张图片并分类入库。"""
         count = min(max(1, count), 50)
-        yield event.plain_result(
-            f"开始搜索 {count} 张图片...\n"
-            f"标签: {self.settings.auto_update_search_tags}\n"
-            f"来源: {self.settings.auto_update_source}"
-        )
+        source = self.settings.auto_update_source.lower()
+        if source == "pixiv":
+            keyword = getattr(self.settings, "pixiv_search_keyword", "").strip()
+            search_word = keyword if keyword else self.settings.auto_update_search_tags
+            search_target = getattr(self.settings, "pixiv_search_target", "partial_match_for_tags")
+            info = f"关键词: {search_word}\n来源: pixiv ({search_target})"
+        else:
+            info = f"标签: {self.settings.auto_update_search_tags}\n来源: {source}"
+        yield event.plain_result(f"开始搜索 {count} 张图片...\n{info}")
 
         async def _do_search():
-            saved = await self.auto_updater._run_once(limit_override=count)
+            result = await self.auto_updater._run_once(limit_override=count)
             try:
+                msg = _format_search_result(result)
                 await self.context.send_message(
                     event.unified_msg_origin,
-                    MessageChain().message(f"搜图完成，入库 {saved} 张"),
+                    MessageChain().message(msg),
                 )
             except Exception:
                 logger.error(f"[MemeMemPlus] 发送搜图结果失败: {traceback.format_exc()}")
 
         asyncio.create_task(_do_search())
+
+    @filter.command("删图")
+    async def delete_meme(self, event: AstrMessageEvent):
+        """删除不想要的表情图片，移入 trash 目录。
+
+        用法：
+        - 发送 /删图 并附带图片 → 按哈希匹配图库中的图片
+        - 回复一张 bot 发的表情图并发送 /删图 → 匹配回复中的图片
+        - 直接发送 /删图 → 删除本会话最近一次发送的表情图
+        """
+        target_path = None
+        recall_msg_id = None
+
+        # 1. 尝试从消息中直接获取图片
+        img_comp = self._find_image_in_chain(event.message_obj.message)
+        if img_comp:
+            target_path = await self._match_image_from_component(img_comp)
+
+        # 2. 尝试从回复的消息中获取图片
+        if not target_path:
+            from astrbot.core.message.components import Reply as ReplyComp
+            for comp in event.message_obj.message:
+                if isinstance(comp, ReplyComp) and comp.chain:
+                    img_comp = self._find_image_in_chain(comp.chain)
+                    if img_comp:
+                        target_path = await self._match_image_from_component(img_comp)
+                        if target_path:
+                            recall_msg_id = comp.id  # 回复的消息ID，用于撤回
+                    break
+
+        # 3. 回退到最近发送的图片
+        if not target_path:
+            last = self._last_sent.get(event.unified_msg_origin)
+            if last:
+                target_path, recall_msg_id = last
+
+        if not target_path or not target_path.exists():
+            yield event.plain_result("未找到可删除的图片。请附带图片、回复表情图、或在发送表情后使用此命令。")
+            return
+
+        # 移入 trash
+        dest = self.trash_dir / target_path.name
+        if dest.exists():
+            stem = dest.stem
+            suffix = dest.suffix
+            dest = self.trash_dir / f"{stem}_{hashlib.md5(target_path.read_bytes()).hexdigest()[:6]}{suffix}"
+
+        shutil.move(str(target_path), str(dest))
+        self.library_mgr.refresh()
+
+        # 尝试撤回消息
+        recalled = await self._try_recall(event, recall_msg_id)
+
+        # 清除 last_sent 记录
+        last = self._last_sent.get(event.unified_msg_origin)
+        if last and last[0] == target_path:
+            del self._last_sent[event.unified_msg_origin]
+
+        mood = target_path.parent.name
+        logger.info(f"[MemeMemPlus] 已删图: {target_path.name} (mood={mood}) → trash/, 撤回={'成功' if recalled else '跳过'}")
+        recall_text = "，已撤回消息" if recalled else ""
+        yield event.plain_result(f"已删除: {target_path.name}\n来源心情: {mood}\n已移入回收站{recall_text}。")
+
+    async def _try_recall(self, event: AstrMessageEvent, msg_id: str | int | None) -> bool:
+        """尝试撤回消息，成功返回 True。"""
+        if not msg_id:
+            return False
+        try:
+            # aiocqhttp (OneBot v11)
+            if hasattr(event, "bot") and hasattr(event.bot, "call_action"):
+                await event.bot.call_action("delete_msg", message_id=int(msg_id))
+                return True
+        except Exception:
+            logger.warning(f"[MemeMemPlus] 撤回消息失败 (msg_id={msg_id}): {traceback.format_exc()}")
+        return False
+
+    def _find_image_in_chain(self, chain: list) -> "Image | None":
+        """从消息链中找到第一个 Image 组件。"""
+        for comp in chain:
+            if isinstance(comp, Image):
+                return comp
+        return None
+
+    async def _match_image_from_component(self, img: Image) -> Path | None:
+        """下载图片并在图库中按哈希匹配。"""
+        try:
+            file_path = await img.convert_to_file_path()
+            image_bytes = Path(file_path).read_bytes()
+            return self.library_mgr.find_by_hash(image_bytes)
+        except Exception:
+            logger.warning(f"[MemeMemPlus] 图片匹配失败: {traceback.format_exc()}")
+            return None

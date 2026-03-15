@@ -1,6 +1,6 @@
 name: astrbot_plugin_meme_manager_plus
 display_name: AI 心情表情管理器 Plus
-desc: 自动检测Bot回复情绪，双级概率触发（表达欲望+LLM生图），支持Gemini/Grok生图引擎，Booru自动搜图入库，自定义心情标签
+desc: 自动检测Bot回复情绪，双级概率触发（表达欲望+LLM生图），支持Gemini/Grok生图引擎，Booru/Pixiv自动搜图入库，自定义心情标签
 help: |
   自动检测 Bot 回复的情绪和表达欲望，双级概率独立判定。
   第一级：表达欲望评分决定是否触发发图。
@@ -8,8 +8,8 @@ help: |
   无论是否生图，都从对应心情目录随机抽取一张发送。
   支持 Gemini 和 Grok 双引擎，图库有参考图时图生图，无图时文生图。
   在 memes/ 下新建文件夹即可添加自定义心情。
-  支持定时从 Booru 图站自动搜图入库（LLM 自动分类心情）。
+  支持定时从 Booru/Pixiv 图站自动搜图入库（LLM 自动分类心情）。
   命令：心情表情状态 / 心情表情刷新 / 自动搜图开启 / 自动搜图关闭 / 自动搜图立即执行 / 搜图 N
-version: v2.0.0
-author: "LOVEROXY"
+version: v2.1.0
+author: "LOVEROXY & sleep340"
 repo: "https://github.com/Sloan-YXT/astrbot_plugin_meme_manager_plus"
