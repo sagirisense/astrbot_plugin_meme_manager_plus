@@ -98,6 +98,9 @@ class PluginSettings:
     novelai_scale: float = 5.0
     novelai_sampler: str = "k_euler_ancestral"
     novelai_tag_prompt: str = ""
+    novelai_r18: bool = False  # R18 模式：LLM 额外生成衣着/身体/行为标签
+    novelai_custom_tags: str = ""  # 用户自定义标签，直接追加到最终正向标签末尾
+    novelai_r18_custom_tags: str = ""  # R18 模式专用自定义标签
     novelai_cooldown_seconds: int = 60
     # 高级生图参数
     novelai_seed: int = -1  # -1=随机
@@ -201,6 +204,9 @@ class ConfigLoader:
         s.novelai_scale = self._get("novelai_settings", "novelai_scale", default=5.0)
         s.novelai_sampler = self._get("novelai_settings", "novelai_sampler", default="k_euler_ancestral")
         s.novelai_tag_prompt = self._get("novelai_settings", "novelai_tag_prompt", default="")
+        s.novelai_r18 = self._get("novelai_settings", "novelai_r18", default=False)
+        s.novelai_custom_tags = self._get("novelai_settings", "novelai_custom_tags", default="")
+        s.novelai_r18_custom_tags = self._get("novelai_settings", "novelai_r18_custom_tags", default="")
         s.novelai_cooldown_seconds = self._get("novelai_settings", "novelai_cooldown_seconds", default=60)
         # 高级生图参数
         s.novelai_seed = self._get("novelai_settings", "novelai_seed", default=-1)

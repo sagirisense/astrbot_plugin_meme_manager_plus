@@ -15,15 +15,16 @@ from ..config.settings import PluginSettings
 from ..utils.provider_helper import DEFAULT_GEMINI_BASE
 from ..utils.llm_client import LLMClient
 
-# MIME 类型映射
-MIME_MAP = {
+# Gemini 支持的 MIME 类型（不含 GIF/BMP）
+GEMINI_MIME_MAP = {
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",
     ".png": "image/png",
-    ".gif": "image/gif",
     ".webp": "image/webp",
-    ".bmp": "image/bmp",
 }
+
+# 需要转换为 JPEG 的格式
+CONVERT_FORMATS = {".gif", ".bmp"}
 
 DEFAULT_GROK_BASE = "https://api.x.ai/v1"
 
@@ -126,10 +127,31 @@ class MoodImageManager:
                 if not ref_path.exists():
                     continue
                 try:
-                    image_data = ref_path.read_bytes()
-                    b64_data = base64.b64encode(image_data).decode("utf-8")
                     suffix = ref_path.suffix.lower()
-                    mime_type = MIME_MAP.get(suffix, "image/png")
+                    image_data = ref_path.read_bytes()
+
+                    # GIF/BMP 等格式 Gemini 不支持，转换为 JPEG
+                    if suffix in CONVERT_FORMATS:
+                        img = Image.open(io.BytesIO(image_data))
+                        if img.mode in ("RGBA", "P", "LA"):
+                            img = img.convert("RGB")
+                        buf = io.BytesIO()
+                        img.save(buf, format="JPEG", quality=90)
+                        image_data = buf.getvalue()
+                        mime_type = "image/jpeg"
+                    else:
+                        mime_type = GEMINI_MIME_MAP.get(suffix)
+                        if not mime_type:
+                            # 未知扩展名，尝试用 PIL 验证并转 JPEG
+                            try:
+                                img = Image.open(io.BytesIO(image_data))
+                                img.verify()
+                            except Exception:
+                                logger.warning(f"[MemeMemPlus] 跳过无效图片: {ref_path.name}")
+                                continue
+                            mime_type = "image/jpeg"
+
+                    b64_data = base64.b64encode(image_data).decode("utf-8")
                     parts.append({
                         "inlineData": {"mimeType": mime_type, "data": b64_data}
                     })

@@ -45,6 +45,7 @@ class AutoUpdater:
         self._task: asyncio.Task | None = None
         self._stop_event = asyncio.Event()
         self._lock = asyncio.Lock()  # 防止并发搜图
+        self._MAX_SEEN_IDS = 10000  # 防止内存泄漏
         # 从磁盘已有文件恢复已下载 ID，避免重复搜索
         self._seen_ids: set[str] = self._load_seen_ids()
 
@@ -624,4 +625,7 @@ class AutoUpdater:
 
         save_path.write_bytes(image_bytes)
         self._seen_ids.add(post_id)
+        # 防止 _seen_ids 无限增长（超限后从磁盘重建，丢弃仅在内存中的临时 ID）
+        if len(self._seen_ids) > self._MAX_SEEN_IDS:
+            self._seen_ids = self._load_seen_ids()
         logger.debug(f"[MemeMemPlus] 自动更新: 已保存 {save_path.name} → {mood}/")

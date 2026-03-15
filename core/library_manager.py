@@ -24,6 +24,7 @@ class LibraryManager:
     def __init__(self, library_dir: Path):
         self.library_dir = library_dir
         self._cache: dict[str, list[Path]] = {}
+        self._hash_index: dict[str, Path] = {}  # md5 → file path, 惰性构建
         self._initialized = False
 
     def initialize(self) -> None:
@@ -41,6 +42,7 @@ class LibraryManager:
     def refresh(self) -> None:
         """重新扫描图库，更新缓存。"""
         self._cache.clear()
+        self._hash_index.clear()
         if not self.library_dir.exists():
             return
 
@@ -87,14 +89,25 @@ class LibraryManager:
         """返回各心情目录的图片数量统计。"""
         return {mood: len(images) for mood, images in self._cache.items()}
 
-    def find_by_hash(self, image_bytes: bytes) -> Path | None:
-        """通过 MD5 哈希在图库中查找匹配的图片文件。"""
-        target_hash = hashlib.md5(image_bytes).hexdigest()
+    def _build_hash_index(self) -> None:
+        """构建 MD5 → 文件路径的索引（首次调用 find_by_hash 时触发）。"""
+        self._hash_index.clear()
         for images in self._cache.values():
             for img_path in images:
                 try:
-                    if hashlib.md5(img_path.read_bytes()).hexdigest() == target_hash:
-                        return img_path
+                    h = hashlib.md5(img_path.read_bytes()).hexdigest()
+                    self._hash_index[h] = img_path
                 except Exception:
                     continue
+        logger.info(f"[MemeMemPlus] 哈希索引已构建: {len(self._hash_index)} 张图片")
+
+    def find_by_hash(self, image_bytes: bytes) -> Path | None:
+        """通过 MD5 哈希在图库中查找匹配的图片文件。"""
+        if not self._hash_index:
+            self._build_hash_index()
+        target_hash = hashlib.md5(image_bytes).hexdigest()
+        found = self._hash_index.get(target_hash)
+        # 验证文件仍然存在（可能被手动删除）
+        if found and found.exists():
+            return found
         return None

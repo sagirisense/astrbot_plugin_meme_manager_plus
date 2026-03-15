@@ -109,12 +109,31 @@ class MoodMemePlugin(Star):
         self._last_sent: dict[str, tuple[Path, str | int | None]] = {}
         self._MAX_LAST_SENT = 200  # 防止内存泄漏
 
+        # 保存后台任务引用，防止被 GC 回收导致异常丢失
+        self._bg_tasks: set[asyncio.Task] = set()
+
         logger.info(
             f"[MemeMemPlus] 插件初始化完成, "
             f"启用={self.settings.enabled}, "
             f"自动更新={'开' if self.settings.auto_update_enabled else '关'}, "
             f"图库心情数={len(self.library_mgr.get_all_moods())}"
         )
+
+    def _launch_bg_task(self, coro) -> asyncio.Task:
+        """创建后台任务并持有引用，任务完成后自动移除。"""
+        task = asyncio.create_task(coro)
+        self._bg_tasks.add(task)
+        task.add_done_callback(self._bg_tasks.discard)
+        return task
+
+    async def _on_unload(self):
+        """插件卸载时清理资源。"""
+        self.auto_updater.stop()
+        for task in list(self._bg_tasks):
+            task.cancel()
+        self._bg_tasks.clear()
+        from .utils.llm_client import LLMClient
+        await LLMClient.close()
 
     @filter.on_llm_response()
     async def handle_llm_response(
@@ -138,7 +157,7 @@ class MoodMemePlugin(Star):
             if random.randint(1, 100) > self.settings.novelai_probability:
                 logger.info("[MemeMemPlus-NAI] 概率未命中，跳过")
                 return
-            asyncio.create_task(
+            self._launch_bg_task(
                 self._novelai_generate_and_send(event, response.completion_text, session_id, group_id)
             )
             return
@@ -148,7 +167,7 @@ class MoodMemePlugin(Star):
             return
 
         # 冷却在实际发送图片后才记录，避免分析失败也消耗冷却
-        asyncio.create_task(
+        self._launch_bg_task(
             self._generate_and_send(event, response.completion_text, session_id, group_id)
         )
 
@@ -199,32 +218,27 @@ class MoodMemePlugin(Star):
                 self.cooldown.record(session_id, group_id)
 
             # 第二级：LLM 生图概率（独立判定，发送后再生图入库）
-            if (
+            if not (
                 self.settings.llm_generation_enabled
                 and random.randint(1, 100) <= self.settings.llm_generation_probability
             ):
-                # 图库总上限检查
-                max_lib = self.settings.max_library_size
-                if max_lib > 0:
-                    total = sum(self.library_mgr.get_stats().values())
-                    if total >= max_lib:
-                        logger.info(f"[MemeMemPlus] 图库已达上限({total}>={max_lib})，跳过生图")
-                    else:
-                        ref_paths = self.library_mgr.get_all_references(mood)
-                        sample_refs = random.sample(ref_paths, 3) if len(ref_paths) > 3 else ref_paths
-                        logger.info(f"[MemeMemPlus] LLM生图命中: mood={mood}, mode={'图生图' if sample_refs else '文生图'}")
-                        gen_bytes = await self.image_mgr.generate(mood, sample_refs or None)
-                        if gen_bytes:
-                            self._save_generated_image(mood, gen_bytes)
-                else:
-                    ref_paths = self.library_mgr.get_all_references(mood)
-                    sample_refs = random.sample(ref_paths, 3) if len(ref_paths) > 3 else ref_paths
-                    logger.info(f"[MemeMemPlus] LLM生图命中: mood={mood}, mode={'图生图' if sample_refs else '文生图'}")
-                    gen_bytes = await self.image_mgr.generate(mood, sample_refs or None)
-                    if gen_bytes:
-                        self._save_generated_image(mood, gen_bytes)
-            else:
                 logger.info(f"[MemeMemPlus] LLM生图未命中或已关闭, mood={mood}")
+                return
+
+            # 图库总上限检查
+            max_lib = self.settings.max_library_size
+            if max_lib > 0:
+                total = sum(self.library_mgr.get_stats().values())
+                if total >= max_lib:
+                    logger.info(f"[MemeMemPlus] 图库已达上限({total}>={max_lib})，跳过生图")
+                    return
+
+            ref_paths = self.library_mgr.get_all_references(mood)
+            sample_refs = random.sample(ref_paths, 3) if len(ref_paths) > 3 else ref_paths
+            logger.info(f"[MemeMemPlus] LLM生图命中: mood={mood}, mode={'图生图' if sample_refs else '文生图'}")
+            gen_bytes = await self.image_mgr.generate(mood, sample_refs or None)
+            if gen_bytes:
+                self._save_generated_image(mood, gen_bytes)
 
         except Exception:
             logger.error(f"[MemeMemPlus] 后台任务异常: {traceback.format_exc()}")
@@ -423,7 +437,7 @@ class MoodMemePlugin(Star):
             except Exception:
                 logger.error(f"[MemeMemPlus] 发送搜图结果失败: {traceback.format_exc()}")
 
-        asyncio.create_task(_do_update())
+        self._launch_bg_task(_do_update())
 
     @filter.command("搜图")
     async def manual_search(self, event: AstrMessageEvent, count: int = 5):
@@ -450,7 +464,7 @@ class MoodMemePlugin(Star):
             except Exception:
                 logger.error(f"[MemeMemPlus] 发送搜图结果失败: {traceback.format_exc()}")
 
-        asyncio.create_task(_do_search())
+        self._launch_bg_task(_do_search())
 
     @filter.command("删图")
     async def delete_meme(self, event: AstrMessageEvent):

@@ -6,3 +6,9 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+
+# 本地生成/下载的图片目录（不上传到 GitHub）
+memes/
+novelai/
+trash/
+files/
