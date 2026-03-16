@@ -37,6 +37,20 @@ DEFAULT_TAG_PROMPT = (
     "Example: smile, looking_at_viewer, sitting, classroom, hand_on_chin"
 )
 
+SFW_TAG_ADDON = (
+    "\n\n**ECCHI LIMIT RULES (HIGHEST PRIORITY, MUST OBEY):**\n"
+    "- Mild skin exposure is ALLOWED: bare_shoulders, off_shoulder, midriff, "
+    "bikini, swimsuit, shorts, miniskirt, cleavage, sleeveless, tank_top, "
+    "sundress, crop_top, thighhighs, etc. These are all fine.\n"
+    "- ABSOLUTELY FORBIDDEN (hard ban): "
+    "nude, naked, topless, bottomless, no_bra, no_panties, nipples, pussy, penis, "
+    "sex, cum, ahegao, spread_legs, bondage, tentacles, see-through_nipples, "
+    "any genital exposure, any sexual action tags, any body fluid tags.\n"
+    "- Rule of thumb: underwear/bra must always be worn. "
+    "Showing skin is OK, showing what's under the underwear is NOT.\n"
+    "- Even if the dialogue is suggestive, do NOT cross into explicit territory.\n"
+)
+
 R18_TAG_ADDON = (
     "\n\n**CRITICAL RULES（最高优先级，必须严格遵守）：**\n"
     "- 如果用户对话中出现「全裸」「completely nude」「naked」「stripped」「无衣」「裸体」「裸身」或任何类似词汇，**强制**使用 completely_nude, naked, no_clothes, no_panties, no_bra, stripped, nude, bottomless, topless，并且**绝对禁止**生成任何衣服相关 tag（包括 torn_clothes、lifted_skirt、open_shirt、bikini、panties 等全部排除）。\n"
@@ -147,7 +161,8 @@ class NovelAIGenerator:
 
         logger.info(f"[MemeMemPlus-NAI] 最终正向标签: {full_tags}")
         if extra_negative:
-            logger.info(f"[MemeMemPlus-NAI] 最终负向标签: {self.settings.novelai_negative_prompt}, {extra_negative}")
+            logger.info(
+                f"[MemeMemPlus-NAI] 最终负向标签: {self.settings.novelai_negative_prompt}, {extra_negative}")
 
         # 2. 调用 NovelAI API（extra_negative 会追加到配置的负向标签后面）
         image_bytes = await self._call_nai_api(full_tags, extra_negative=extra_negative)
@@ -182,6 +197,9 @@ class NovelAIGenerator:
         # R18 模式：追加 NSFW 标签生成指令（含 NEGATIVE 行输出格式）
         if is_r18:
             prompt += R18_TAG_ADDON
+        else:
+            # 非 R18：强制 SFW 约束，防止 LLM 生成擦边标签
+            prompt += SFW_TAG_ADDON
         system_msg = (
             "You are a tag generator. Output ONLY comma-separated English tags. "
             "No explanation, no numbering, no markdown."
