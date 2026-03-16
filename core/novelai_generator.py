@@ -96,6 +96,8 @@ class NovelAIGenerator:
         self.context = context
         self.output_dir = plugin_dir / "novelai"
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.generated_dir = self.output_dir / "generated"
+        self.generated_dir.mkdir(parents=True, exist_ok=True)
         # 参考图从配置面板上传，存放在 files/novelai_reference_image/ 目录
         self._ref_dir = plugin_dir / "files" / "novelai_reference_image"
 
@@ -112,6 +114,28 @@ class NovelAIGenerator:
             if f.is_file() and f.suffix.lower() in exts:
                 return f
         return None
+
+    def _enforce_cache_limit(self) -> None:
+        """如果 novelai/ 目录图片数超过上限，删除最旧的图片腾出空间。"""
+        max_size = getattr(self.settings, "novelai_max_cache", 0)
+        if max_size <= 0:
+            return
+        exts = (".jpg", ".jpeg", ".png", ".webp")
+        files = sorted(
+            (f for f in self.output_dir.iterdir()
+             if f.is_file() and f.suffix.lower() in exts),
+            key=lambda f: f.stat().st_mtime,
+        )
+        # 需要删除的数量（为新图腾出 1 个位置）
+        to_remove = len(files) - max_size + 1
+        if to_remove <= 0:
+            return
+        for f in files[:to_remove]:
+            try:
+                f.unlink()
+                logger.info(f"[MemeMemPlus-NAI] 缓存超限，已删除最旧图片: {f.name}")
+            except Exception:
+                logger.warning(f"[MemeMemPlus-NAI] 删除失败: {f.name}")
 
     def _load_reference_b64(self) -> str | None:
         """读取参考图并返回 base64 字符串。"""
@@ -131,23 +155,30 @@ class NovelAIGenerator:
         Returns:
             (image_bytes, saved_path) 或 (None, None) 失败时。
         """
-        cfg = load_mood_provider(self.context, self.settings)
-        if not cfg.valid:
-            logger.warning("[MemeMemPlus-NAI] 未找到 LLM 提供商配置，无法补全标签")
-            return None, None
-
         base_tags = self.settings.novelai_base_tags.strip()
         if not base_tags:
             logger.warning("[MemeMemPlus-NAI] 未配置角色基础标签")
             return None, None
 
-        # 1. LLM 补全标签
-        extra_tags, extra_negative = await self._generate_tags(cfg, bot_reply, base_tags)
-        if not extra_tags:
-            logger.warning("[MemeMemPlus-NAI] LLM 标签补全失败，使用基础标签生图")
-            full_tags = base_tags
+        extra_negative = None
+        llm_enabled = getattr(self.settings, "novelai_llm_enabled", True)
+
+        if llm_enabled:
+            # LLM 模式：用 LLM 根据对话内容补全标签
+            cfg = load_mood_provider(self.context, self.settings)
+            if not cfg.valid:
+                logger.warning("[MemeMemPlus-NAI] 未找到 LLM 提供商配置，无法补全标签")
+                return None, None
+            extra_tags, extra_negative = await self._generate_tags(cfg, bot_reply, base_tags)
+            if not extra_tags:
+                logger.warning("[MemeMemPlus-NAI] LLM 标签补全失败，使用基础标签生图")
+                full_tags = base_tags
+            else:
+                full_tags = f"{base_tags}, {extra_tags}"
         else:
-            full_tags = f"{base_tags}, {extra_tags}"
+            # 纯标签模式：不调用 LLM，直接用 base_tags
+            logger.info("[MemeMemPlus-NAI] LLM 已关闭，使用基础标签直接生图")
+            full_tags = base_tags
 
         # 追加用户自定义标签
         custom_tags = self.settings.novelai_custom_tags.strip()
@@ -169,16 +200,44 @@ class NovelAIGenerator:
         if not image_bytes:
             return None, None
 
-        # 3. 保存到 novelai/ 目录
+        save_path = self._save_image(image_bytes)
+        return image_bytes, str(save_path) if save_path else None
+
+    async def run_direct(self, positive_tags: str) -> tuple[bytes | None, str | None]:
+        """直接用用户提供的正向标签生图，负向标签用配置值。跳过 LLM。
+
+        Returns:
+            (image_bytes, saved_path) 或 (None, None) 失败时。
+        """
+        if not positive_tags.strip():
+            logger.warning("[MemeMemPlus-NAI] /ni 命令未提供标签")
+            return None, None
+
+        logger.info(f"[MemeMemPlus-NAI] /ni 直接生图, 正向标签: {positive_tags}")
+        image_bytes = await self._call_nai_api(positive_tags.strip())
+        if not image_bytes:
+            return None, None
+
+        save_path = self._save_image(image_bytes, subdir=self.generated_dir)
+        return image_bytes, str(save_path) if save_path else None
+
+    def _save_image(self, image_bytes: bytes, subdir: Path | None = None) -> Path | None:
+        """保存生成的图片，超过上限时删除最旧的。
+
+        Args:
+            subdir: 保存目录，默认为 novelai/。/ni 命令使用 novelai/generated/。
+        """
+        self._enforce_cache_limit()
+        target_dir = subdir or self.output_dir
         name_hash = hashlib.md5(image_bytes).hexdigest()[:12]
-        save_path = self.output_dir / f"nai_{name_hash}.png"
+        save_path = target_dir / f"nai_{name_hash}.png"
         try:
             save_path.write_bytes(image_bytes)
             logger.info(f"[MemeMemPlus-NAI] 图片已保存: {save_path.name}")
+            return save_path
         except Exception:
             logger.error(f"[MemeMemPlus-NAI] 保存失败: {traceback.format_exc()}")
-
-        return image_bytes, str(save_path)
+            return None
 
     async def _generate_tags(
         self, cfg: LLMApiConfig, bot_reply: str, base_tags: str
@@ -252,7 +311,7 @@ class NovelAIGenerator:
         return positive, negative
 
     async def _call_nai_api(
-        self, tags: str, extra_negative: str | None = None
+        self, tags: str, extra_negative: str | None = None,
     ) -> bytes | None:
         """调用 NovelAI Image Generation API。"""
         api_key = self.settings.novelai_api_key
@@ -395,9 +454,8 @@ class NovelAIGenerator:
             payload["image"] = ref_b64
 
         try:
-            from ..utils.llm_client import LLMClient
             tm = aiohttp.ClientTimeout(total=120)
-            session = LLMClient._get_session()
+            session = await LLMClient.get_session()
             async with session.post(
                 NAI_API_URL, headers=headers, json=payload, timeout=tm
             ) as resp:
@@ -422,11 +480,16 @@ class NovelAIGenerator:
     @staticmethod
     def _extract_image_from_zip(data: bytes) -> bytes | None:
         """从 NAI 返回的 zip 数据中提取图片。"""
+        MAX_UNCOMPRESSED = 50 * 1024 * 1024  # 50MB 解压上限
         try:
             with zipfile.ZipFile(io.BytesIO(data)) as zf:
-                for name in zf.namelist():
-                    if name.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
-                        return zf.read(name)
+                for info in zf.infolist():
+                    if not info.filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+                        continue
+                    if info.file_size > MAX_UNCOMPRESSED:
+                        logger.warning(f"[MemeMemPlus-NAI] zip 内文件过大({info.file_size // 1024 // 1024}MB)，跳过")
+                        continue
+                    return zf.read(info.filename)
             logger.warning("[MemeMemPlus-NAI] zip 中未找到图片文件")
         except zipfile.BadZipFile:
             logger.error("[MemeMemPlus-NAI] 返回数据不是有效的 zip 文件")

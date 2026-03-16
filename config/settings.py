@@ -66,7 +66,7 @@ class PluginSettings:
     max_library_size: int = 0  # 0=不限制
 
     # Sticker
-    sticker_mode: bool = False
+    sticker_mode: bool = True
 
     # Cooldown
     cooldown_seconds: int = 60
@@ -101,7 +101,10 @@ class PluginSettings:
     novelai_r18: bool = False  # R18 模式：LLM 额外生成衣着/身体/行为标签
     novelai_custom_tags: str = ""  # 用户自定义标签，直接追加到最终正向标签末尾
     novelai_r18_custom_tags: str = ""  # R18 模式专用自定义标签
+    novelai_llm_enabled: bool = True  # 是否用 LLM 补全标签，关闭后直接用 base_tags
+    novelai_sticker_mode: bool = True  # NovelAI 独立小图模式
     novelai_cooldown_seconds: int = 60
+    novelai_max_cache: int = 100  # novelai/ 目录最大图片数，0=不限制
     # 高级生图参数
     novelai_seed: int = -1  # -1=随机
     novelai_quality_toggle: bool = True
@@ -170,13 +173,20 @@ class ConfigLoader:
         s.reference_prompt_addon = self._get(
             "generation_settings", "reference_prompt_addon", default=DEFAULT_REFERENCE_ADDON
         )
-        s.max_library_size = self._get("generation_settings", "max_library_size", default=0)
+        s.max_library_size = (
+            self._get("library_settings", "max_library_size", default=None)
+            or self._get("generation_settings", "max_library_size", default=0)
+        )
         # Sticker
         s.sticker_mode = self._get("generation_settings", "sticker_mode", default=False)
 
-        # Cooldown
-        s.cooldown_seconds = self._get("cooldown_settings", "cooldown_seconds", default=60)
-        s.per_group = self._get("cooldown_settings", "per_group", default=True)
+        # Cooldown (新位置: library_settings，兼容旧位置: cooldown_settings)
+        s.cooldown_seconds = (
+            self._get("library_settings", "cooldown_seconds", default=None)
+            or self._get("cooldown_settings", "cooldown_seconds", default=60)
+        )
+        per_group = self._get("library_settings", "per_group", default=None)
+        s.per_group = per_group if per_group is not None else self._get("cooldown_settings", "per_group", default=True)
 
         # Auto update
         s.auto_update_enabled = self._get("auto_update_settings", "auto_update_enabled", default=False)
@@ -207,7 +217,10 @@ class ConfigLoader:
         s.novelai_r18 = self._get("novelai_settings", "novelai_r18", default=False)
         s.novelai_custom_tags = self._get("novelai_settings", "novelai_custom_tags", default="")
         s.novelai_r18_custom_tags = self._get("novelai_settings", "novelai_r18_custom_tags", default="")
+        s.novelai_llm_enabled = self._get("novelai_settings", "novelai_llm_enabled", default=True)
+        s.novelai_sticker_mode = self._get("novelai_settings", "novelai_sticker_mode", default=True)
         s.novelai_cooldown_seconds = self._get("novelai_settings", "novelai_cooldown_seconds", default=60)
+        s.novelai_max_cache = self._get("novelai_settings", "novelai_max_cache", default=100)
         # 高级生图参数
         s.novelai_seed = self._get("novelai_settings", "novelai_seed", default=-1)
         s.novelai_quality_toggle = self._get("novelai_settings", "novelai_quality_toggle", default=True)
@@ -228,5 +241,32 @@ class ConfigLoader:
         s.novelai_director_strength = self._get("novelai_settings", "novelai_director_strength", default=0.5)
         s.novelai_director_fidelity = self._get("novelai_settings", "novelai_director_fidelity", default=0.5)
         s.novelai_director_info_extracted = self._get("novelai_settings", "novelai_director_info_extracted", default=1.0)
+
+        # 校验关键数值范围
+        s.expression_threshold = max(0.0, min(1.0, s.expression_threshold))
+        s.llm_generation_probability = max(0, min(100, s.llm_generation_probability))
+        s.cooldown_seconds = max(0, s.cooldown_seconds)
+        s.novelai_probability = max(0, min(100, s.novelai_probability))
+        s.novelai_cooldown_seconds = max(0, s.novelai_cooldown_seconds)
+        s.novelai_scale = max(0.0, s.novelai_scale)
+        s.novelai_steps = max(1, min(50, s.novelai_steps))
+        s.novelai_width = max(64, s.novelai_width)
+        s.novelai_height = max(64, s.novelai_height)
+        s.max_library_size = max(0, s.max_library_size)
+        s.novelai_max_cache = max(0, s.novelai_max_cache)
+        # 参考图参数 0-1 范围
+        s.novelai_reference_strength = max(0.0, min(1.0, s.novelai_reference_strength))
+        s.novelai_reference_info_extracted = max(0.0, min(1.0, s.novelai_reference_info_extracted))
+        s.novelai_img2img_strength = max(0.0, min(1.0, s.novelai_img2img_strength))
+        s.novelai_img2img_noise = max(0.0, min(1.0, s.novelai_img2img_noise))
+        s.novelai_director_strength = max(0.0, min(1.0, s.novelai_director_strength))
+        s.novelai_director_fidelity = max(0.0, min(1.0, s.novelai_director_fidelity))
+        s.novelai_director_info_extracted = max(0.0, min(1.0, s.novelai_director_info_extracted))
+        s.novelai_cfg_rescale = max(0.0, min(1.0, s.novelai_cfg_rescale))
+        # 枚举值校验
+        if s.novelai_reference_mode not in ("vibe_transfer", "img2img", "director"):
+            s.novelai_reference_mode = "vibe_transfer"
+        if s.image_provider_type.lower() not in ("gemini", "grok"):
+            s.image_provider_type = "gemini"
 
         return s

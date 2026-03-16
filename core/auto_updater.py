@@ -108,11 +108,12 @@ class AutoUpdater:
     def stop(self) -> None:
         """停止后台任务。"""
         self._stop_event.set()
-        if self._task and not self._task.done():
-            self._task.cancel()
+        task = self._task
+        if task and not task.done():
+            task.cancel()
         self._task = None
         # 同步清理类变量
-        if AutoUpdater._global_task is self._task or (
+        if AutoUpdater._global_task is task or (
             AutoUpdater._global_stop_event is self._stop_event
         ):
             AutoUpdater._global_task = None
@@ -122,6 +123,15 @@ class AutoUpdater:
     @property
     def running(self) -> bool:
         return self._task is not None and not self._task.done()
+
+    @property
+    def seen_ids_count(self) -> int:
+        """已记录的图片 ID 数量（供状态显示用）。"""
+        return len(self._seen_ids)
+
+    def reload_seen_ids(self) -> None:
+        """从磁盘重建已下载 ID 集合。"""
+        self._seen_ids = self._load_seen_ids()
 
     async def _loop(self) -> None:
         """主循环：等待间隔 → 执行一轮搜图。"""
@@ -250,11 +260,7 @@ class AutoUpdater:
                 logger.info(f"[MemeMemPlus] 自动更新: 图片 → {mood} ← {_post_url(post['id'])}")
 
         self.library_mgr.refresh()
-        total_in_library = sum(
-            len(list(d.iterdir()))
-            for d in self.library_mgr.library_dir.iterdir()
-            if d.is_dir()
-        )
+        total_in_library = sum(self.library_mgr.get_stats().values())
         logger.info(
             f"[MemeMemPlus] 自动更新完成: 搜索 {len(posts)} 张, "
             f"入库 {saved} 张, 下载失败 {skipped_dl}, 筛选拒绝 {skipped_filter}, "
@@ -487,19 +493,6 @@ class AutoUpdater:
 
     # ── 下载 ──────────────────────────────────────────────────
 
-    async def _download_image(self, url: str) -> bytes | None:
-        """下载图片，限制最大 10MB。Pixiv 需要 Referer。（单次调用，自建 Session）"""
-        try:
-            headers = {}
-            if "pximg.net" in url or "pixiv" in url:
-                headers["Referer"] = "https://www.pixiv.net/"
-            timeout = aiohttp.ClientTimeout(total=60)
-            async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
-                return await self._download_image_with_session(session, url)
-        except Exception as e:
-            logger.debug(f"[MemeMemPlus] 下载图片失败: {e}")
-            return None
-
     async def _download_image_with_session(
         self, session: aiohttp.ClientSession, url: str
     ) -> bytes | None:
@@ -641,7 +634,7 @@ class AutoUpdater:
         mood_dir = self.library_mgr.library_dir / mood
         mood_dir.mkdir(parents=True, exist_ok=True)
 
-        name_hash = hashlib.md5(image_bytes).hexdigest()[:10]
+        name_hash = hashlib.md5(image_bytes).hexdigest()[:12]
         save_path = mood_dir / f"booru_{post_id}_{name_hash}.jpg"
 
         if save_path.exists():

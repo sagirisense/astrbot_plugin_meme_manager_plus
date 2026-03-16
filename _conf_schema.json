@@ -104,9 +104,9 @@
     }
   },
   "generation_settings": {
-    "description": "生图设置",
+    "description": "大模型生图设置",
     "type": "object",
-    "hint": "控制图片生成的参数",
+    "hint": "控制 Gemini/Grok 大模型生成表情图片的参数",
     "items": {
       "image_prompt_template": {
         "description": "生图提示词模板",
@@ -123,27 +123,27 @@
       "sticker_mode": {
         "description": "表情包模式",
         "type": "bool",
-        "default": false,
+        "default": true,
         "hint": "开启后将图片缩放为 200x200 正方形再发送，QQ 会以表情包样式展示（小图、无边框、点击不放大）"
-      },
-      "max_library_size": {
-        "description": "图库总上限",
-        "type": "int",
-        "default": 0,
-        "hint": "图库总图片数达到此值后，停止自动搜图和 LLM 生图。0=不限制"
       }
     }
   },
-  "cooldown_settings": {
-    "description": "冷却设置",
+  "library_settings": {
+    "description": "图库与冷却",
     "type": "object",
-    "hint": "防止过于频繁地生成图片",
+    "hint": "控制图库存储上限和发图冷却间隔",
     "items": {
+      "max_library_size": {
+        "description": "心情图库总上限",
+        "type": "int",
+        "default": 0,
+        "hint": "memes/ 图库总图片数达到此值后，停止自动搜图和 LLM 生图。0=不限制"
+      },
       "cooldown_seconds": {
         "description": "冷却时间（秒）",
         "type": "int",
         "default": 60,
-        "hint": "两次生图之间的最短间隔"
+        "hint": "两次发图之间的最短间隔"
       },
       "per_group": {
         "description": "按群组冷却",
@@ -218,7 +218,7 @@
         "description": "允许 Pixiv R-18",
         "type": "bool",
         "default": false,
-        "hint": "关闭时自动过滤 R-18/R-18G 作品，只搜全年龄内容"
+        "hint": "仅 Pixiv 图源支持精确过滤。其他站（Danbooru/Yande.re/Konachan）依赖 LLM 审核，不保证完全拦截。关闭时自动过滤 R-18/R-18G 作品，只搜全年龄内容"
       },
       "auto_update_filter_prompt": {
         "description": "搜图筛选提示词",
@@ -252,6 +252,12 @@
         "options": ["nai-diffusion-4-5-full", "nai-diffusion-4-5-curated", "nai-diffusion-4-full", "nai-diffusion-4-curated-preview", "nai-diffusion-3"],
         "hint": "V4.5 Full 最新最强（推荐）。Opus 会员默认配置免费无限生图（832×1216, ≤28步, 纯文生图）。Precise Reference 需要 V4.5"
       },
+      "novelai_llm_enabled": {
+        "description": "启用 LLM 标签补全",
+        "type": "bool",
+        "default": true,
+        "hint": "开启时 LLM 根据对话内容自动补全表情/动作/场景标签。关闭后只使用基础标签+自定义标签直接生图，不调用 LLM。可配合 /ni 命令手动注入标签"
+      },
       "novelai_probability": {
         "description": "触发概率（%）",
         "type": "int",
@@ -264,12 +270,17 @@
         "default": 60,
         "hint": "两次 NovelAI 生图之间的最短间隔，防止刷屏"
       },
-
-      "_separator_tags": {
-        "description": "───── 标签设置 ─────",
-        "type": "string",
-        "default": "",
-        "hint": "控制发送给 NovelAI 的正向/负向标签内容"
+      "novelai_max_cache": {
+        "description": "图片缓存上限",
+        "type": "int",
+        "default": 100,
+        "hint": "novelai/ 目录最多保存的图片数量，超过后自动删除最旧的图片。0=不限制"
+      },
+      "novelai_sticker_mode": {
+        "description": "小图模式",
+        "type": "bool",
+        "default": true,
+        "hint": "开启后将 NovelAI 生成的图片缩放为 200x200 小图再发送，QQ 会以表情包样式展示。与心情表情的「表情包模式」独立控制"
       },
       "novelai_base_tags": {
         "description": "角色基础标签（必填）",
@@ -295,13 +306,6 @@
         "default": "",
         "hint": "覆盖内置的 LLM 标签补全提示词模板。必须包含 {base_tags} 和 {bot_reply} 占位符。留空使用内置模板。普通用户无需修改"
       },
-
-      "_separator_r18": {
-        "description": "───── R18 模式 ─────",
-        "type": "string",
-        "default": "",
-        "hint": "开启后 LLM 会根据对话语境额外生成 NSFW 标签"
-      },
       "novelai_r18": {
         "description": "启用 R18 模式",
         "type": "bool",
@@ -315,12 +319,6 @@
         "hint": "仅在 R18 模式开启时追加到正向标签末尾，关闭 R18 时不生效。适合填入每次 R18 生图都想要的固定 NSFW 标签。例如: completely_nude, huge_breasts。会与上面的「通用追加标签」叠加"
       },
 
-      "_separator_image": {
-        "description": "───── 图片尺寸与采样 ─────",
-        "type": "string",
-        "default": "",
-        "hint": "控制生成图片的尺寸和采样参数。Opus 会员免费条件：宽×高 ≤ 1048576 且步数 ≤ 28"
-      },
       "novelai_width": {
         "description": "图片宽度",
         "type": "int",
@@ -359,12 +357,6 @@
         "hint": "-1 = 每次随机。填入固定值可复现同一张图（相同标签+种子=相同结果）"
       },
 
-      "_separator_advanced": {
-        "description": "───── 高级参数（一般无需修改）─────",
-        "type": "string",
-        "default": "",
-        "hint": "以下为进阶生图参数，默认值适用于大多数场景"
-      },
       "novelai_quality_toggle": {
         "description": "质量标签",
         "type": "bool",
@@ -413,13 +405,6 @@
         "type": "float",
         "default": 0.0,
         "hint": "多样性增强，在高 sigma 阶段跳过 CFG 引导。0=关闭，推荐值 19-26"
-      },
-
-      "_separator_reference": {
-        "description": "───── 参考图设置 ─────",
-        "type": "string",
-        "default": "",
-        "hint": "上传角色参考图，生图时提取角色特征作为引导。支持三种模式"
       },
       "novelai_reference_image": {
         "description": "上传参考图",

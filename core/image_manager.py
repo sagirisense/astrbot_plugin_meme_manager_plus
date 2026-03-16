@@ -142,10 +142,14 @@ class MoodImageManager:
                     else:
                         mime_type = GEMINI_MIME_MAP.get(suffix)
                         if not mime_type:
-                            # 未知扩展名，尝试用 PIL 验证并转 JPEG
+                            # 未知扩展名，转换为 JPEG 确保 Gemini 可识别
                             try:
                                 img = Image.open(io.BytesIO(image_data))
-                                img.verify()
+                                if img.mode in ("RGBA", "P", "LA"):
+                                    img = img.convert("RGB")
+                                buf = io.BytesIO()
+                                img.save(buf, format="JPEG", quality=90)
+                                image_data = buf.getvalue()
                             except Exception:
                                 logger.warning(f"[MemeMemPlus] 跳过无效图片: {ref_path.name}")
                                 continue
@@ -183,14 +187,14 @@ class MoodImageManager:
 
         try:
             timeout = aiohttp.ClientTimeout(total=self.settings.timeout)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.post(url, headers=headers, json=payload) as resp:
-                    if resp.status != 200:
-                        error_text = await resp.text()
-                        logger.error(f"[MemeMemPlus] Gemini API 错误 {resp.status}: {error_text[:200]}")
-                        return None
-                    data = await resp.json()
-                    return self._parse_gemini_response(data)
+            session = await LLMClient.get_session()
+            async with session.post(url, headers=headers, json=payload, timeout=timeout) as resp:
+                if resp.status != 200:
+                    error_text = await resp.text()
+                    logger.error(f"[MemeMemPlus] Gemini API 错误 {resp.status}: {error_text[:200]}")
+                    return None
+                data = await resp.json()
+                return self._parse_gemini_response(data)
         except aiohttp.ClientError as e:
             logger.error(f"[MemeMemPlus] Gemini API 网络错误: {e}")
             return None
@@ -280,9 +284,11 @@ class MoodImageManager:
         if has_refs:
             # 图编辑模式: POST /images/edits（Grok 仅支持 1 张输入图）
             url = f"{self._api_base}/images/edits"
-            ref_path = random.choice(reference_paths)
-            if not ref_path.exists():
+            # 从存在的参考图中随机选一张
+            valid_refs = [p for p in reference_paths if p.exists()]
+            if not valid_refs:
                 return await self._grok_text2img(prompt, headers, resolution)
+            ref_path = random.choice(valid_refs)
             try:
                 raw_data = ref_path.read_bytes()
                 compressed, mime_type = await asyncio.to_thread(self._compress_image, raw_data)
@@ -307,14 +313,14 @@ class MoodImageManager:
 
         try:
             timeout = aiohttp.ClientTimeout(total=self.settings.timeout)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.post(url, headers=headers, json=payload) as resp:
-                    if resp.status != 200:
-                        error_text = await resp.text()
-                        logger.error(f"[MemeMemPlus] Grok API 错误 {resp.status}: {error_text[:200]}")
-                        return None
-                    data = await resp.json()
-                    return self._parse_grok_response(data)
+            session = await LLMClient.get_session()
+            async with session.post(url, headers=headers, json=payload, timeout=timeout) as resp:
+                if resp.status != 200:
+                    error_text = await resp.text()
+                    logger.error(f"[MemeMemPlus] Grok API 错误 {resp.status}: {error_text[:200]}")
+                    return None
+                data = await resp.json()
+                return self._parse_grok_response(data)
         except aiohttp.ClientError as e:
             logger.error(f"[MemeMemPlus] Grok API 网络错误: {e}")
             return None
@@ -335,14 +341,14 @@ class MoodImageManager:
 
         try:
             timeout = aiohttp.ClientTimeout(total=self.settings.timeout)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.post(url, headers=headers, json=payload) as resp:
-                    if resp.status != 200:
-                        error_text = await resp.text()
-                        logger.error(f"[MemeMemPlus] Grok API 错误 {resp.status}: {error_text[:200]}")
-                        return None
-                    data = await resp.json()
-                    return self._parse_grok_response(data)
+            session = await LLMClient.get_session()
+            async with session.post(url, headers=headers, json=payload, timeout=timeout) as resp:
+                if resp.status != 200:
+                    error_text = await resp.text()
+                    logger.error(f"[MemeMemPlus] Grok API 错误 {resp.status}: {error_text[:200]}")
+                    return None
+                data = await resp.json()
+                return self._parse_grok_response(data)
         except aiohttp.ClientError as e:
             logger.error(f"[MemeMemPlus] Grok API 网络错误: {e}")
             return None

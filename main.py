@@ -1,4 +1,5 @@
 import asyncio
+import collections
 import hashlib
 import io
 import random
@@ -12,6 +13,7 @@ from astrbot.api.star import Context, Star, register
 from astrbot.api.provider import LLMResponse
 from astrbot.core.message.components import Image
 from astrbot.core.message.message_event_result import MessageChain
+from astrbot.core.star.filter.command import GreedyStr
 from astrbot.api import AstrBotConfig
 
 from .config.settings import ConfigLoader
@@ -106,7 +108,8 @@ class MoodMemePlugin(Star):
 
         # 记录每个会话最近发送的图片路径和消息ID，用于 /删图
         # 格式: {unified_msg_origin: (file_path, message_id_or_None)}
-        self._last_sent: dict[str, tuple[Path, str | int | None]] = {}
+        # OrderedDict 保证 FIFO 淘汰顺序
+        self._last_sent: collections.OrderedDict[str, tuple[Path, str | int | None]] = collections.OrderedDict()
         self._MAX_LAST_SENT = 200  # 防止内存泄漏
 
         # 保存后台任务引用，防止被 GC 回收导致异常丢失
@@ -211,9 +214,8 @@ class MoodMemePlugin(Star):
                 sent_msg_id = await self._send_image(event, image_bytes)
                 self._last_sent[event.unified_msg_origin] = (picked, sent_msg_id)
                 # 防止 _last_sent 无限增长
-                if len(self._last_sent) > self._MAX_LAST_SENT:
-                    oldest_key = next(iter(self._last_sent))
-                    del self._last_sent[oldest_key]
+                while len(self._last_sent) > self._MAX_LAST_SENT:
+                    self._last_sent.popitem(last=False)
                 # 实际发送成功后才记录冷却
                 self.cooldown.record(session_id, group_id)
 
@@ -255,7 +257,7 @@ class MoodMemePlugin(Star):
                 logger.warning("[MemeMemPlus-NAI] 生图失败")
                 return
 
-            await self._send_image(event, image_bytes)
+            await self._send_image(event, image_bytes, sticker=self.settings.novelai_sticker_mode)
             self.novelai_cooldown.record(session_id, group_id)
             logger.info(f"[MemeMemPlus-NAI] 生图完成并发送, saved={save_path}")
 
@@ -289,11 +291,16 @@ class MoodMemePlugin(Star):
         canvas.save(buf, format="GIF", transparency=255)
         return buf.getvalue()
 
-    async def _send_image(self, event: AstrMessageEvent, image_bytes: bytes) -> str | int | None:
-        """发送图片到对应会话，返回 message_id（如果平台支持）。"""
+    async def _send_image(
+        self, event: AstrMessageEvent, image_bytes: bytes, sticker: bool | None = None,
+    ) -> str | int | None:
+        """发送图片到对应会话，返回 message_id（如果平台支持）。
+
+        sticker: 是否以小图模式发送。None=使用心情表情的 sticker_mode 设置。
+        """
         try:
-            # 表情包模式：缩放为小图
-            if getattr(self.settings, "sticker_mode", False):
+            use_sticker = sticker if sticker is not None else self.settings.sticker_mode
+            if use_sticker:
                 image_bytes = self._to_sticker(image_bytes)
             msg_id = None
             # aiocqhttp: 直接调用 bot API 以获取 message_id
@@ -301,8 +308,7 @@ class MoodMemePlugin(Star):
                 import base64 as b64mod
                 b64_str = b64mod.b64encode(image_bytes).decode()
                 seg = {"type": "image", "data": {"file": f"base64://{b64_str}"}}
-                # 表情包模式：subType=7 让 QQ 以表情包形式展示
-                if getattr(self.settings, "sticker_mode", False):
+                if use_sticker:
                     seg["data"]["subType"] = "7"
                 group_id = event.get_group_id()
                 if group_id:
@@ -388,10 +394,10 @@ class MoodMemePlugin(Star):
     async def refresh_library(self, event: AstrMessageEvent):
         """重新扫描图库目录，同步已删除图片的黑名单。"""
         self.library_mgr.refresh()
-        self.auto_updater._seen_ids = self.auto_updater._load_seen_ids()
+        self.auto_updater.reload_seen_ids()
         stats = self.library_mgr.get_stats()
         total = sum(stats.values())
-        blocked = len(self.auto_updater._seen_ids)
+        blocked = self.auto_updater.seen_ids_count
         yield event.plain_result(
             f"图库已刷新: {len(stats)} 个心情, 共 {total} 张参考图\n"
             f"已记录 {blocked} 个 booru ID（含回收站）"
@@ -465,6 +471,39 @@ class MoodMemePlugin(Star):
                 logger.error(f"[MemeMemPlus] 发送搜图结果失败: {traceback.format_exc()}")
 
         self._launch_bg_task(_do_search())
+
+    @filter.command("ni")
+    async def novelai_direct(self, event: AstrMessageEvent, tags: GreedyStr):
+        """直接用指定标签调用 NovelAI 生图，跳过 LLM。
+
+        用法: /ni 1girl, smile, beach, sunset
+        正向标签由用户提供，负向标签使用配置值。
+        """
+        if not tags.strip():
+            yield event.plain_result("用法: /ni <正向标签>\n例如: /ni 1girl, smile, beach, sunset")
+            return
+        if not self.settings.novelai_api_key:
+            yield event.plain_result("未配置 NovelAI API Key")
+            return
+
+        logger.info(f"[MemeMemPlus-NAI] /ni 收到标签: '{tags}'")
+        yield event.plain_result("NovelAI 直接生图中...")
+
+        async def _do_ni():
+            image_bytes, save_path = await self.novelai_gen.run_direct(tags)
+            if not image_bytes:
+                try:
+                    await self.context.send_message(
+                        event.unified_msg_origin,
+                        MessageChain().message("NovelAI 生图失败"),
+                    )
+                except Exception:
+                    pass
+                return
+            await self._send_image(event, image_bytes, sticker=self.settings.novelai_sticker_mode)
+            logger.info(f"[MemeMemPlus-NAI] /ni 生图完成, saved={save_path}")
+
+        self._launch_bg_task(_do_ni())
 
     @filter.command("删图")
     async def delete_meme(self, event: AstrMessageEvent):

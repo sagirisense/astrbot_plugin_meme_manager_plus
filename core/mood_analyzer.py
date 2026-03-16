@@ -108,7 +108,7 @@ class MoodAnalyzer:
         except (ValueError, IndexError):
             pass
 
-        # 4) 全部失败，随机选一个并降低 score
+        # 4) 全部失败，随机选一个，score=0 确保不会误触发
         fallback = random.choice(available_moods)
         logger.warning(f"[MemeMemPlus] 情绪分析无法解析 '{result}', 随机回退: mood={fallback}")
-        return 0.3, fallback
+        return 0.0, fallback

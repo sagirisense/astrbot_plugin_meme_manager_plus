@@ -4,6 +4,8 @@
 复用 aiohttp.ClientSession 避免每次请求重建 TCP/TLS 连接。
 """
 
+import asyncio
+
 import aiohttp
 
 from astrbot.api import logger
@@ -15,19 +17,25 @@ class LLMClient:
     """LLM 文本/Vision 通用调用，自动分发 Gemini / OpenAI。"""
 
     _session: aiohttp.ClientSession | None = None
+    _session_lock: asyncio.Lock = asyncio.Lock()
 
     @classmethod
-    def _get_session(cls) -> aiohttp.ClientSession:
-        """获取或创建共享的 ClientSession（惰性初始化）。"""
-        if cls._session is None or cls._session.closed:
-            cls._session = aiohttp.ClientSession()
+    async def get_session(cls) -> aiohttp.ClientSession:
+        """获取或创建共享的 ClientSession（线程安全）。"""
+        if cls._session and not cls._session.closed:
+            return cls._session
+        async with cls._session_lock:
+            # 双重检查：拿到锁后再看一次
+            if cls._session is None or cls._session.closed:
+                cls._session = aiohttp.ClientSession()
         return cls._session
 
     @classmethod
     async def close(cls) -> None:
         """关闭共享 session（插件卸载时调用）。"""
-        if cls._session and not cls._session.closed:
-            await cls._session.close()
+        async with cls._session_lock:
+            if cls._session and not cls._session.closed:
+                await cls._session.close()
             cls._session = None
 
     # ── URL 构建 ──────────────────────────────────────────
@@ -108,7 +116,7 @@ class LLMClient:
 
         try:
             tm = aiohttp.ClientTimeout(total=timeout)
-            session = LLMClient._get_session()
+            session = await LLMClient.get_session()
             async with session.post(url, headers=headers, json=payload, timeout=tm) as resp:
                 if resp.status != 200:
                     error_text = await resp.text()
@@ -168,7 +176,7 @@ class LLMClient:
 
         try:
             tm = aiohttp.ClientTimeout(total=timeout)
-            session = LLMClient._get_session()
+            session = await LLMClient.get_session()
             async with session.post(url, headers=headers, json=payload, timeout=tm) as resp:
                 if resp.status != 200:
                     error_text = await resp.text()

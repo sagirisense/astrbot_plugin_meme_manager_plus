@@ -7,8 +7,11 @@ __pycache__/
 dist/
 build/
 
-# 本地生成/下载的图片目录（不上传到 GitHub）
-memes/
+# 本地生成/下载的图片（不上传到 GitHub），但保留目录结构
+memes/**
+!memes/
+!memes/*/
+!memes/**/.gitkeep
 novelai/
 trash/
 files/
