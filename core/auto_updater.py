@@ -38,6 +38,10 @@ IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 class AutoUpdater:
     """定时从 Booru 搜索角色图片，用 LLM 判断心情后保存到对应目录。"""
 
+    # 类级别：确保全局只有一个定时循环在运行（防止插件热重载时多个循环叠加）
+    _global_task: asyncio.Task | None = None
+    _global_stop_event: asyncio.Event | None = None
+
     def __init__(self, settings: PluginSettings, context, library_mgr):
         self.settings = settings
         self.context = context
@@ -78,11 +82,22 @@ class AutoUpdater:
         return ids
 
     def start(self) -> None:
-        """启动后台定时任务。"""
+        """启动后台定时任务。先停止全局已有的旧循环，防止热重载叠加。"""
+        # 停止全局旧循环（如果存在）——防止插件重载时多个 _loop 同时运行
+        if AutoUpdater._global_task and not AutoUpdater._global_task.done():
+            logger.info("[MemeMemPlus] 检测到旧的自动更新循环，先停止")
+            if AutoUpdater._global_stop_event:
+                AutoUpdater._global_stop_event.set()
+            AutoUpdater._global_task.cancel()
+            AutoUpdater._global_task = None
+
         if self._task and not self._task.done():
             return
         self._stop_event.clear()
         self._task = asyncio.create_task(self._loop())
+        # 记录到类变量，供下次热重载时清理
+        AutoUpdater._global_task = self._task
+        AutoUpdater._global_stop_event = self._stop_event
         logger.info(
             f"[MemeMemPlus] 自动更新已启动: "
             f"间隔={self.settings.auto_update_interval_hours}h, "
@@ -96,6 +111,12 @@ class AutoUpdater:
         if self._task and not self._task.done():
             self._task.cancel()
         self._task = None
+        # 同步清理类变量
+        if AutoUpdater._global_task is self._task or (
+            AutoUpdater._global_stop_event is self._stop_event
+        ):
+            AutoUpdater._global_task = None
+            AutoUpdater._global_stop_event = None
         logger.info("[MemeMemPlus] 自动更新已停止")
 
     @property
@@ -104,15 +125,17 @@ class AutoUpdater:
 
     async def _loop(self) -> None:
         """主循环：等待间隔 → 执行一轮搜图。"""
-        interval = max(0.5, self.settings.auto_update_interval_hours) * 3600
         # 首次启动延迟 30 秒，避免和初始化抢资源
         await self._wait(30)
 
         while not self._stop_event.is_set():
+            # 每轮重新读取间隔，以便用户改配置后立即生效
+            interval = max(0.5, self.settings.auto_update_interval_hours) * 3600
             try:
                 await self._run_once()
             except Exception:
                 logger.error(f"[MemeMemPlus] 自动更新异常: {traceback.format_exc()}")
+            logger.info(f"[MemeMemPlus] 自动更新: 下次执行在 {interval/3600:.1f} 小时后")
             await self._wait(interval)
 
     async def _wait(self, seconds: float) -> None:
@@ -200,6 +223,7 @@ class AutoUpdater:
                 url = _post_url(post['id'])
                 mood = await self._classify_mood(image_bytes, available_moods, post_url=url)
                 if not mood:
+                    self._seen_ids.add(post["id"])
                     return ("__no_mood__", post, image_bytes)
                 return (mood, post, image_bytes)
 
