@@ -132,8 +132,11 @@ class MoodMemePlugin(Star):
     async def _on_unload(self):
         """插件卸载时清理资源。"""
         self.auto_updater.stop()
-        for task in list(self._bg_tasks):
+        tasks = list(self._bg_tasks)
+        for task in tasks:
             task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
         self._bg_tasks.clear()
         from .utils.llm_client import LLMClient
         await LLMClient.close()
@@ -160,6 +163,8 @@ class MoodMemePlugin(Star):
             if random.randint(1, 100) > self.settings.novelai_probability:
                 logger.info("[MemeMemPlus-NAI] 概率未命中，跳过")
                 return
+            # 先记录冷却防止并发重复触发
+            self.novelai_cooldown.record(session_id, group_id)
             self._launch_bg_task(
                 self._novelai_generate_and_send(event, response.completion_text, session_id, group_id)
             )
@@ -169,7 +174,8 @@ class MoodMemePlugin(Star):
             logger.info(f"[MemeMemPlus] 冷却中，跳过 (session={session_id})")
             return
 
-        # 冷却在实际发送图片后才记录，避免分析失败也消耗冷却
+        # 先记录冷却防止并发重复触发
+        self.cooldown.record(session_id, group_id)
         self._launch_bg_task(
             self._generate_and_send(event, response.completion_text, session_id, group_id)
         )
@@ -216,8 +222,6 @@ class MoodMemePlugin(Star):
                 # 防止 _last_sent 无限增长
                 while len(self._last_sent) > self._MAX_LAST_SENT:
                     self._last_sent.popitem(last=False)
-                # 实际发送成功后才记录冷却
-                self.cooldown.record(session_id, group_id)
 
             # 第二级：LLM 生图概率（独立判定，发送后再生图入库）
             if not (
@@ -258,7 +262,6 @@ class MoodMemePlugin(Star):
                 return
 
             await self._send_image(event, image_bytes, sticker=self.settings.novelai_sticker_mode)
-            self.novelai_cooldown.record(session_id, group_id)
             logger.info(f"[MemeMemPlus-NAI] 生图完成并发送, saved={save_path}")
 
         except Exception:
@@ -476,21 +479,38 @@ class MoodMemePlugin(Star):
     async def novelai_direct(self, event: AstrMessageEvent, tags: GreedyStr):
         """直接用指定标签调用 NovelAI 生图，跳过 LLM。
 
-        用法: /ni 1girl, smile, beach, sunset
+        用法: /ni <正向标签>       → 发送原图
+              /ni 0 <正向标签>     → 发送小图(GIF贴纸)
         正向标签由用户提供，负向标签使用配置值。
         """
         if not tags.strip():
-            yield event.plain_result("用法: /ni <正向标签>\n例如: /ni 1girl, smile, beach, sunset")
+            yield event.plain_result("用法: /ni <正向标签>\n       /ni 0 <正向标签>  (小图模式)")
             return
         if not self.settings.novelai_api_key:
             yield event.plain_result("未配置 NovelAI API Key")
             return
 
-        logger.info(f"[MemeMemPlus-NAI] /ni 收到标签: '{tags}'")
-        yield event.plain_result("NovelAI 直接生图中...")
+        # 解析小图模式: /ni 0 xxx → sticker=True, 否则 sticker=False
+        stripped = tags.strip()
+        if stripped == "0" or stripped.startswith("0 ") or stripped.startswith("0,"):
+            use_sticker = True
+            tags = stripped[1:].strip().lstrip(",").strip()
+            if not tags:
+                yield event.plain_result("用法: /ni 0 <正向标签>\n例如: /ni 0 1girl, smile")
+                return
+        else:
+            use_sticker = False
+
+        # 原图模式使用独立模型（如果配置了），小图模式使用默认模型
+        model_override = None
+        if not use_sticker and self.settings.novelai_direct_model:
+            model_override = self.settings.novelai_direct_model
+
+        logger.info(f"[MemeMemPlus-NAI] /ni 收到标签: '{tags}', 小图模式={use_sticker}, 模型={model_override or '默认'}")
+        yield event.plain_result(f"NovelAI 直接生图中...{'(小图模式)' if use_sticker else ''}")
 
         async def _do_ni():
-            image_bytes, save_path = await self.novelai_gen.run_direct(tags)
+            image_bytes, save_path = await self.novelai_gen.run_direct(tags, model_override=model_override)
             if not image_bytes:
                 try:
                     await self.context.send_message(
@@ -500,7 +520,7 @@ class MoodMemePlugin(Star):
                 except Exception:
                     pass
                 return
-            await self._send_image(event, image_bytes, sticker=self.settings.novelai_sticker_mode)
+            await self._send_image(event, image_bytes, sticker=use_sticker)
             logger.info(f"[MemeMemPlus-NAI] /ni 生图完成, saved={save_path}")
 
         self._launch_bg_task(_do_ni())

@@ -103,6 +103,7 @@ class PluginSettings:
     novelai_r18_custom_tags: str = ""  # R18 模式专用自定义标签
     novelai_llm_enabled: bool = True  # 是否用 LLM 补全标签，关闭后直接用 base_tags
     novelai_sticker_mode: bool = True  # NovelAI 独立小图模式
+    novelai_direct_model: str = ""  # /ni 原图模式专用模型，留空使用 novelai_model
     novelai_cooldown_seconds: int = 60
     novelai_max_cache: int = 100  # novelai/ 目录最大图片数，0=不限制
     # 高级生图参数
@@ -173,18 +174,14 @@ class ConfigLoader:
         s.reference_prompt_addon = self._get(
             "generation_settings", "reference_prompt_addon", default=DEFAULT_REFERENCE_ADDON
         )
-        s.max_library_size = (
-            self._get("library_settings", "max_library_size", default=None)
-            or self._get("generation_settings", "max_library_size", default=0)
-        )
+        _max_lib = self._get("library_settings", "max_library_size", default=None)
+        s.max_library_size = _max_lib if _max_lib is not None else self._get("generation_settings", "max_library_size", default=0)
         # Sticker
         s.sticker_mode = self._get("generation_settings", "sticker_mode", default=False)
 
         # Cooldown (新位置: library_settings，兼容旧位置: cooldown_settings)
-        s.cooldown_seconds = (
-            self._get("library_settings", "cooldown_seconds", default=None)
-            or self._get("cooldown_settings", "cooldown_seconds", default=60)
-        )
+        _cd = self._get("library_settings", "cooldown_seconds", default=None)
+        s.cooldown_seconds = _cd if _cd is not None else self._get("cooldown_settings", "cooldown_seconds", default=60)
         per_group = self._get("library_settings", "per_group", default=None)
         s.per_group = per_group if per_group is not None else self._get("cooldown_settings", "per_group", default=True)
 
@@ -219,6 +216,7 @@ class ConfigLoader:
         s.novelai_r18_custom_tags = self._get("novelai_settings", "novelai_r18_custom_tags", default="")
         s.novelai_llm_enabled = self._get("novelai_settings", "novelai_llm_enabled", default=True)
         s.novelai_sticker_mode = self._get("novelai_settings", "novelai_sticker_mode", default=True)
+        s.novelai_direct_model = self._get("novelai_settings", "novelai_direct_model", default="")
         s.novelai_cooldown_seconds = self._get("novelai_settings", "novelai_cooldown_seconds", default=60)
         s.novelai_max_cache = self._get("novelai_settings", "novelai_max_cache", default=100)
         # 高级生图参数

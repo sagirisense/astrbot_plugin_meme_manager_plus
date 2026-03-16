@@ -63,18 +63,25 @@ class LLMClient:
         b64_image: str | None = None,
         max_tokens: int = 30,
         timeout: int = 30,
+        single_line: bool = False,
     ) -> str | None:
-        """自动分发到 Gemini 或 OpenAI，返回文本或 None。"""
+        """自动分发到 Gemini 或 OpenAI，返回文本或 None。
+
+        Args:
+            single_line: 为 True 时只保留最后一行（用于情绪分析等单行输出场景）。
+        """
         if cfg.is_gemini:
             return await LLMClient._call_gemini(
                 cfg, prompt,
                 system_msg=system_msg, b64_image=b64_image,
                 max_tokens=max_tokens, timeout=timeout,
+                single_line=single_line,
             )
         return await LLMClient._call_openai(
             cfg, prompt,
             system_msg=system_msg, b64_image=b64_image,
             max_tokens=max_tokens, timeout=timeout,
+            single_line=single_line,
         )
 
     # ── Gemini ────────────────────────────────────────────
@@ -88,6 +95,7 @@ class LLMClient:
         b64_image: str | None = None,
         max_tokens: int = 30,
         timeout: int = 30,
+        single_line: bool = False,
     ) -> str | None:
         url = LLMClient.build_gemini_url(cfg.api_base, cfg.model)
         headers = {"x-goog-api-key": cfg.api_key, "Content-Type": "application/json"}
@@ -133,7 +141,12 @@ class LLMClient:
                     return None
                 for part in candidates[0].get("content", {}).get("parts", []):
                     if "text" in part:
-                        return part["text"].strip()
+                        text = part["text"].strip()
+                        if single_line and "\n" in text:
+                            # 取最后一个非空行，防止尾部空行导致返回空字符串
+                            lines = [l.strip() for l in text.split("\n") if l.strip()]
+                            text = lines[-1] if lines else text
+                        return text
         except Exception as e:
             logger.error(f"[MemeMemPlus] Gemini 调用失败: {type(e).__name__}: {e}")
         return None
@@ -149,6 +162,7 @@ class LLMClient:
         b64_image: str | None = None,
         max_tokens: int = 30,
         timeout: int = 30,
+        single_line: bool = False,
     ) -> str | None:
         url = LLMClient.build_openai_url(cfg.api_base)
         headers = {"Authorization": f"Bearer {cfg.api_key}", "Content-Type": "application/json"}
@@ -192,9 +206,9 @@ class LLMClient:
                 content = msg.get("content", "").strip()
                 if not content:
                     content = msg.get("reasoning_content", "").strip()
-                # 多行时取最后一行（部分模型会输出思考过程）
-                if content and "\n" in content:
-                    content = content.strip().split("\n")[-1].strip()
+                if single_line and content and "\n" in content:
+                    lines = [l.strip() for l in content.split("\n") if l.strip()]
+                    content = lines[-1] if lines else content
                 return content or None
         except Exception as e:
             logger.error(f"[MemeMemPlus] OpenAI 调用失败: {type(e).__name__}: {e}")

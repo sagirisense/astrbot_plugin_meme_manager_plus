@@ -277,10 +277,17 @@
         "hint": "novelai/ 目录最多保存的图片数量，超过后自动删除最旧的图片。0=不限制"
       },
       "novelai_sticker_mode": {
-        "description": "小图模式",
+        "description": "小图模式（自动生图）",
         "type": "bool",
         "default": true,
-        "hint": "开启后将 NovelAI 生成的图片缩放为 200x200 小图再发送，QQ 会以表情包样式展示。与心情表情的「表情包模式」独立控制"
+        "hint": "自动生图（Bot 回复触发）的发送模式。开启后将图片缩放为 200x200 小图再发送。/ni 0 命令也使用此模式"
+      },
+      "novelai_direct_model": {
+        "description": "/ni 原图模式专用模型",
+        "type": "string",
+        "default": "",
+        "options": ["", "nai-diffusion-4-5-full", "nai-diffusion-4-5-curated", "nai-diffusion-4-full", "nai-diffusion-4-curated-preview", "nai-diffusion-3"],
+        "hint": "/ni 命令（不带 0 前缀）发送原图时使用的模型。留空则使用上方的「生图模型」。/ni 0 小图模式始终使用上方的「生图模型」"
       },
       "novelai_base_tags": {
         "description": "角色基础标签（必填）",

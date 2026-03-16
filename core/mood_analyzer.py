@@ -52,6 +52,7 @@ class MoodAnalyzer:
                 system_msg=system_msg,
                 max_tokens=50,
                 timeout=self.settings.llm_timeout,
+                single_line=True,
             )
             if not result_text:
                 logger.warning("[MemeMemPlus] 情绪分析 API 返回为空")

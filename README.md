@@ -1,4 +1,4 @@
-# astrbot_plugin_meme_manager_plus v3.4.0
+# astrbot_plugin_meme_manager_plus v3.5.0
 
 AI 心情表情管理器 — 自动分析 Bot 回复的情绪与表达欲望，双级概率独立判定，智能生成风格多变的表情图片。
 
@@ -160,7 +160,8 @@ Bot 回复后按概率触发，LLM 根据对话内容自动补全角色标签，
 | novelai_custom_tags | 自定义追加标签（通用，每次生图都带） | — |
 | novelai_probability | 触发概率 (0-100) | 30 |
 | novelai_cooldown_seconds | 独立冷却时间（秒） | 60 |
-| novelai_sticker_mode | 小图模式（独立于心情表情的表情包模式） | true |
+| novelai_sticker_mode | 小图模式（自动生图 + `/ni 0` 命令） | true |
+| novelai_direct_model | `/ni` 原图模式专用模型（留空用默认模型） | — |
 | novelai_max_cache | 图片缓存上限（0=不限制） | 100 |
 
 #### R18 模式
@@ -307,9 +308,24 @@ LLM Vision 分析每张图片的表情/心情
 | `自动搜图关闭` | 关闭自动搜图 |
 | `自动搜图立即执行` | 立即执行一次搜图 |
 | `删图` | 删除表情图（附带图片 / 回复图片 / 最近发送的） |
-| `ni <标签>` | 直接用指定标签调用 NovelAI 生图，跳过 LLM，图片存入 `novelai/generated/` |
+| `ni <标签>` | 直接用指定标签调用 NovelAI 生图（原图模式），图片存入 `novelai/generated/` |
+| `ni 0 <标签>` | 同上，但以小图 GIF 贴纸模式发送 |
 
 ## 更新日志
+
+### v3.5.0
+
+- **`/ni` 命令模式分离**：`/ni <标签>` 发送原图，`/ni 0 <标签>` 发送小图 GIF 贴纸。原图模式支持独立模型配置
+- **新增 `/ni` 原图模式专用模型**：配置面板新增 `novelai_direct_model`，可为 `/ni` 原图模式指定不同于自动生图的模型
+- **修复 LLM 多行输出被截断（严重）**：`LLMClient` 在 OpenAI/Gemini 路径中将多行输出截为最后一行，导致 NovelAI R18 模式正向标签丢失。改为 `single_line` 参数，仅情绪分析等场景截断
+- **修复配置值 `0` 被忽略**：`max_library_size=0` 和 `cooldown_seconds=0` 因 `or` 运算符被错误回退到旧配置位置的默认值
+- **修复插件卸载资源泄漏**：`_on_unload` 现在 `await` 已取消的后台任务，防止 session 在任务运行中被关闭
+- **修复缓存上限遗漏 `generated/` 目录**：`/ni` 生成的图片不受缓存清理管理，`generated/` 可无限增长。现在统一计入上限
+- **修复搜图压缩阻塞事件循环**：PIL 图片压缩移入 `asyncio.to_thread`，不再阻塞异步 IO
+- **修复冷却竞态条件**：冷却改为乐观记录（先 record 再启动后台任务），防止并发请求绕过冷却
+- **修复 `auto_updater.stop()` 跨实例误清理**：条件判断 `or` → `and`
+- **修复多行标签拼接产生双逗号**：LLM 输出的标签行尾逗号在拼接时产生 `,,`
+- **修复 `single_line` 取到空行**：LLM 输出末尾有空行时，截取最后一行得到空字符串
 
 ### v3.4.0
 

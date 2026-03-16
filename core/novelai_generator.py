@@ -116,16 +116,20 @@ class NovelAIGenerator:
         return None
 
     def _enforce_cache_limit(self) -> None:
-        """如果 novelai/ 目录图片数超过上限，删除最旧的图片腾出空间。"""
+        """如果 novelai/ 及 generated/ 目录图片数超过上限，删除最旧的图片腾出空间。"""
         max_size = getattr(self.settings, "novelai_max_cache", 0)
         if max_size <= 0:
             return
         exts = (".jpg", ".jpeg", ".png", ".webp")
-        files = sorted(
-            (f for f in self.output_dir.iterdir()
-             if f.is_file() and f.suffix.lower() in exts),
-            key=lambda f: f.stat().st_mtime,
-        )
+        # 扫描 output_dir 和 generated_dir 两个目录
+        all_files = []
+        for d in (self.output_dir, self.generated_dir):
+            if d.exists():
+                all_files.extend(
+                    f for f in d.iterdir()
+                    if f.is_file() and f.suffix.lower() in exts
+                )
+        files = sorted(all_files, key=lambda f: f.stat().st_mtime)
         # 需要删除的数量（为新图腾出 1 个位置）
         to_remove = len(files) - max_size + 1
         if to_remove <= 0:
@@ -203,8 +207,14 @@ class NovelAIGenerator:
         save_path = self._save_image(image_bytes)
         return image_bytes, str(save_path) if save_path else None
 
-    async def run_direct(self, positive_tags: str) -> tuple[bytes | None, str | None]:
+    async def run_direct(
+        self, positive_tags: str, model_override: str | None = None,
+    ) -> tuple[bytes | None, str | None]:
         """直接用用户提供的正向标签生图，负向标签用配置值。跳过 LLM。
+
+        Args:
+            positive_tags: 用户提供的正向标签。
+            model_override: 覆盖模型名称，None 使用配置默认值。
 
         Returns:
             (image_bytes, saved_path) 或 (None, None) 失败时。
@@ -213,8 +223,8 @@ class NovelAIGenerator:
             logger.warning("[MemeMemPlus-NAI] /ni 命令未提供标签")
             return None, None
 
-        logger.info(f"[MemeMemPlus-NAI] /ni 直接生图, 正向标签: {positive_tags}")
-        image_bytes = await self._call_nai_api(positive_tags.strip())
+        logger.info(f"[MemeMemPlus-NAI] /ni 直接生图, 正向标签: {positive_tags}, 模型: {model_override or '默认'}")
+        image_bytes = await self._call_nai_api(positive_tags.strip(), model_override=model_override)
         if not image_bytes:
             return None, None
 
@@ -300,7 +310,7 @@ class NovelAIGenerator:
                 if neg_text:
                     negative = neg_text
             else:
-                pos_parts.append(stripped)
+                pos_parts.append(stripped.rstrip(',').strip())
 
         if pos_parts:
             positive = ", ".join(pos_parts).replace("\n", ", ")
@@ -312,6 +322,7 @@ class NovelAIGenerator:
 
     async def _call_nai_api(
         self, tags: str, extra_negative: str | None = None,
+        model_override: str | None = None,
     ) -> bytes | None:
         """调用 NovelAI Image Generation API。"""
         api_key = self.settings.novelai_api_key
@@ -324,7 +335,7 @@ class NovelAIGenerator:
             "Content-Type": "application/json",
         }
 
-        model = self.settings.novelai_model
+        model = model_override or self.settings.novelai_model
         negative = self.settings.novelai_negative_prompt
         # 追加 LLM 动态生成的负向标签
         if extra_negative:

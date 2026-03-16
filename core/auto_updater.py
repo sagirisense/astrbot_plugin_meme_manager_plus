@@ -113,7 +113,7 @@ class AutoUpdater:
             task.cancel()
         self._task = None
         # 同步清理类变量
-        if AutoUpdater._global_task is task or (
+        if AutoUpdater._global_task is task and (
             AutoUpdater._global_stop_event is self._stop_event
         ):
             AutoUpdater._global_task = None
@@ -517,15 +517,12 @@ class AutoUpdater:
             if len(raw) <= COMPRESS_THRESHOLD:
                 return raw
 
-            # 大图压缩
-            img = Image.open(io.BytesIO(raw))
-            img.thumbnail((TARGET_MAX_DIM, TARGET_MAX_DIM), Image.LANCZOS)
-            buf = io.BytesIO()
-            img.convert("RGB").save(buf, format="JPEG", quality=JPEG_QUALITY)
-            compressed = buf.getvalue()
-            logger.info(
-                f"[MemeMemPlus] 大图已压缩: {len(raw) // 1024}KB → {len(compressed) // 1024}KB ← {url[:80]}"
-            )
+            # 大图压缩（CPU 密集，放到线程池避免阻塞事件循环）
+            compressed = await asyncio.to_thread(self._compress_image, raw)
+            if compressed:
+                logger.info(
+                    f"[MemeMemPlus] 大图已压缩: {len(raw) // 1024}KB → {len(compressed) // 1024}KB ← {url[:80]}"
+                )
             return compressed
 
         except asyncio.TimeoutError:
@@ -533,6 +530,18 @@ class AutoUpdater:
             return None
         except Exception as e:
             logger.info(f"[MemeMemPlus] 下载异常: {type(e).__name__}: {e} ← {url[:120]}")
+            return None
+
+    @staticmethod
+    def _compress_image(raw: bytes) -> bytes | None:
+        """CPU 密集的 PIL 压缩，应在 to_thread 中调用。"""
+        try:
+            img = Image.open(io.BytesIO(raw))
+            img.thumbnail((1600, 1600), Image.LANCZOS)
+            buf = io.BytesIO()
+            img.convert("RGB").save(buf, format="JPEG", quality=85)
+            return buf.getvalue()
+        except Exception:
             return None
 
     # ── LLM 筛选与分类 ───────────────────────────────────────
@@ -560,6 +569,7 @@ class AutoUpdater:
                 b64_image=b64_data,
                 max_tokens=30,
                 timeout=self.settings.llm_timeout,
+                single_line=True,
             )
             if not result:
                 return True  # API 失败时放行
@@ -602,6 +612,7 @@ class AutoUpdater:
                 b64_image=b64_data,
                 max_tokens=30,
                 timeout=self.settings.llm_timeout,
+                single_line=True,
             )
             if not result:
                 return None
