@@ -99,11 +99,16 @@ class PluginSettings:
     novelai_sampler: str = "k_euler_ancestral"
     novelai_tag_prompt: str = ""
     novelai_r18: bool = False  # R18 模式：LLM 额外生成衣着/身体/行为标签
+    novelai_safe_mode: bool = True  # 安全模式：非 R18 时强制 SFW 约束
+    novelai_use_outfit: bool = False  # 从 life_scheduler 获取今日穿搭注入标签
     novelai_custom_tags: str = ""  # 用户自定义标签，直接追加到最终正向标签末尾
     novelai_r18_custom_tags: str = ""  # R18 模式专用自定义标签
     novelai_llm_enabled: bool = True  # 是否用 LLM 补全标签，关闭后直接用 base_tags
     novelai_sticker_mode: bool = True  # NovelAI 独立小图模式
     novelai_direct_model: str = ""  # /ni 原图模式专用模型，留空使用 novelai_model
+    novelai_tag_history_size: int = 5  # 标签历史缓存条数，0=关闭
+    novelai_history_weight: float = 0.8  # 标签历史最新条目权重（最旧=0.3，线性衰减到此值）
+    novelai_outfit_weight: float = 0.85  # 穿搭 tag 权重
     novelai_cooldown_seconds: int = 60
     novelai_max_cache: int = 100  # novelai/ 目录最大图片数，0=不限制
     # 高级生图参数
@@ -212,11 +217,16 @@ class ConfigLoader:
         s.novelai_sampler = self._get("novelai_settings", "novelai_sampler", default="k_euler_ancestral")
         s.novelai_tag_prompt = self._get("novelai_settings", "novelai_tag_prompt", default="")
         s.novelai_r18 = self._get("novelai_settings", "novelai_r18", default=False)
+        s.novelai_safe_mode = self._get("novelai_settings", "novelai_safe_mode", default=True)
+        s.novelai_use_outfit = self._get("novelai_settings", "novelai_use_outfit", default=False)
         s.novelai_custom_tags = self._get("novelai_settings", "novelai_custom_tags", default="")
         s.novelai_r18_custom_tags = self._get("novelai_settings", "novelai_r18_custom_tags", default="")
         s.novelai_llm_enabled = self._get("novelai_settings", "novelai_llm_enabled", default=True)
         s.novelai_sticker_mode = self._get("novelai_settings", "novelai_sticker_mode", default=True)
         s.novelai_direct_model = self._get("novelai_settings", "novelai_direct_model", default="")
+        s.novelai_tag_history_size = self._get("novelai_settings", "novelai_tag_history_size", default=5)
+        s.novelai_history_weight = self._get("novelai_settings", "novelai_history_weight", default=0.8)
+        s.novelai_outfit_weight = self._get("novelai_settings", "novelai_outfit_weight", default=0.85)
         s.novelai_cooldown_seconds = self._get("novelai_settings", "novelai_cooldown_seconds", default=60)
         s.novelai_max_cache = self._get("novelai_settings", "novelai_max_cache", default=100)
         # 高级生图参数
@@ -252,6 +262,9 @@ class ConfigLoader:
         s.novelai_height = max(64, s.novelai_height)
         s.max_library_size = max(0, s.max_library_size)
         s.novelai_max_cache = max(0, s.novelai_max_cache)
+        s.novelai_tag_history_size = max(0, min(20, s.novelai_tag_history_size))
+        s.novelai_history_weight = max(0.1, min(1.5, s.novelai_history_weight))
+        s.novelai_outfit_weight = max(0.1, min(1.5, s.novelai_outfit_weight))
         # 参考图参数 0-1 范围
         s.novelai_reference_strength = max(0.0, min(1.0, s.novelai_reference_strength))
         s.novelai_reference_info_extracted = max(0.0, min(1.0, s.novelai_reference_info_extracted))

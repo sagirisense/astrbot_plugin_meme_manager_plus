@@ -6,7 +6,9 @@
 """
 
 import base64
+import collections
 import hashlib
+import json
 import random
 import zipfile
 import io
@@ -100,6 +102,152 @@ class NovelAIGenerator:
         self.generated_dir.mkdir(parents=True, exist_ok=True)
         # 参考图从配置面板上传，存放在 files/novelai_reference_image/ 目录
         self._ref_dir = plugin_dir / "files" / "novelai_reference_image"
+        # 标签历史缓存：按会话隔离，每个 session_id 独立的 deque
+        self._tag_history: dict[str, collections.deque[str]] = {}
+        self._tag_cache_dir = plugin_dir / "tag_cache"
+        self._tag_cache_dir.mkdir(parents=True, exist_ok=True)
+        self._load_all_tag_caches()
+        # life_scheduler 插件实例缓存
+        self._life_plugin = None
+        # 穿搭 tag 缓存：仅在穿搭文本变化时重新生成
+        self._cached_outfit_text: str = ""
+        self._cached_outfit_tags: str = ""
+
+    def _get_session_history(self, session_id: str) -> collections.deque:
+        """获取指定会话的标签历史 deque，不存在则创建。"""
+        if session_id not in self._tag_history:
+            self._tag_history[session_id] = collections.deque()
+        return self._tag_history[session_id]
+
+    def _session_cache_path(self, session_id: str) -> Path:
+        """会话缓存文件路径：tag_cache/<safe_name>.json"""
+        safe = hashlib.md5(session_id.encode()).hexdigest()[:12]
+        return self._tag_cache_dir / f"{safe}.json"
+
+    def _save_session_cache(self, session_id: str) -> None:
+        """将指定会话的标签历史持久化到文件。最多保存最近 500 条防止文件过大。"""
+        if not session_id:
+            return
+        q = self._tag_history.get(session_id)
+        if not q:
+            return
+        try:
+            tags = list(q)[-500:]  # 磁盘保留上限，内存保持完整
+            data = {"session_id": session_id, "tags": tags}
+            self._session_cache_path(session_id).write_text(
+                json.dumps(data, ensure_ascii=False), encoding="utf-8"
+            )
+        except Exception:
+            pass
+
+    def _load_all_tag_caches(self) -> None:
+        """启动时从 tag_cache/ 恢复所有会话历史。"""
+        if not self._tag_cache_dir.exists():
+            return
+        for f in self._tag_cache_dir.iterdir():
+            if f.suffix != ".json":
+                continue
+            try:
+                data = json.loads(f.read_text(encoding="utf-8"))
+                sid = data.get("session_id", "")
+                tags = data.get("tags", [])
+                if sid and tags:
+                    q = collections.deque(tags)
+                    self._tag_history[sid] = q
+                    logger.debug(f"[MemeMemPlus-NAI] 恢复会话标签历史: {sid[:20]}... ({len(q)} 条)")
+            except Exception:
+                pass
+
+    def _get_raw_outfit(self) -> str | None:
+        """从 life_scheduler 插件获取今日穿搭原始文本。"""
+        if not self._life_plugin:
+            try:
+                for p in self.context.get_all_stars():
+                    p_id = getattr(p, "id", "") or ""
+                    p_name = getattr(p, "name", "") or ""
+                    if "life_scheduler" in p_id or "life_scheduler" in p_name:
+                        self._life_plugin = (
+                            getattr(p, "star_instance", None)
+                            or getattr(p, "instance", None)
+                            or getattr(p, "star_cls", None)
+                        )
+                        break
+            except Exception:
+                return None
+        if not self._life_plugin:
+            return None
+        try:
+            import datetime as _dt
+            data_mgr = getattr(self._life_plugin, "data_mgr", None)
+            if not data_mgr:
+                return None
+            schedule = data_mgr.get(_dt.datetime.now())
+            if not schedule or getattr(schedule, "status", "") == "failed":
+                return None
+            outfit = getattr(schedule, "outfit", "") or ""
+            outfit_style = getattr(schedule, "outfit_style", "") or ""
+            parts = []
+            if outfit:
+                parts.append(outfit)
+            if outfit_style:
+                parts.append(outfit_style)
+            return ", ".join(parts) if parts else None
+        except Exception as e:
+            logger.debug(f"[MemeMemPlus-NAI] 获取穿搭失败: {e}")
+            return None
+
+    async def _refresh_outfit_tags(self, cfg) -> str:
+        """检查穿搭是否变化，变化时用 LLM 转换为 NovelAI tags 并缓存。返回缓存的 tags。"""
+        raw = self._get_raw_outfit() or ""
+        if raw == self._cached_outfit_text:
+            return self._cached_outfit_tags
+        # 穿搭变化
+        logger.debug(f"[MemeMemPlus-NAI] 穿搭变化检测: 旧='{self._cached_outfit_text[:30]}' 新='{raw[:30]}'")
+        self._cached_outfit_text = raw
+        if not raw:
+            self._cached_outfit_tags = ""
+            logger.info("[MemeMemPlus-NAI] 穿搭已清空")
+            return ""
+        # LLM 转换穿搭描述为 NovelAI tags
+        try:
+            prompt = (
+                f"Convert this outfit description to NovelAI image tags (comma-separated English tags only):\n"
+                f"{raw}\n\n"
+                f"Output ONLY comma-separated clothing/accessory tags. No explanation."
+            )
+            result = await LLMClient.call(
+                cfg, prompt,
+                system_msg="You are a tag converter. Output ONLY comma-separated English tags.",
+                max_tokens=100,
+                timeout=self.settings.llm_timeout,
+            )
+            # 多行输出合并为逗号分隔的单行
+            if result:
+                lines = [l.strip().rstrip(",").strip() for l in result.splitlines() if l.strip()]
+                tags = ", ".join(lines).rstrip(",").strip()
+            else:
+                tags = ""
+            self._cached_outfit_tags = tags
+            logger.info(f"[MemeMemPlus-NAI] 穿搭 tag 已更新: '{raw[:30]}...' → '{tags}'")
+        except Exception as e:
+            logger.warning(f"[MemeMemPlus-NAI] 穿搭 tag 转换失败: {e}")
+            self._cached_outfit_tags = ""
+        return self._cached_outfit_tags
+
+    def clear_tag_caches(self) -> None:
+        """清空标签历史和穿搭缓存。外部可在 /reset 等场景调用。"""
+        self._tag_history.clear()
+        self._cached_outfit_text = ""
+        self._cached_outfit_tags = ""
+        # 清除持久化文件
+        if self._tag_cache_dir.exists():
+            for f in self._tag_cache_dir.iterdir():
+                if f.suffix == ".json":
+                    try:
+                        f.unlink()
+                    except Exception:
+                        pass
+        logger.info("[MemeMemPlus-NAI] 标签历史和穿搭缓存已清空")
 
     @property
     def has_reference(self) -> bool:
@@ -129,7 +277,7 @@ class NovelAIGenerator:
                     f for f in d.iterdir()
                     if f.is_file() and f.suffix.lower() in exts
                 )
-        files = sorted(all_files, key=lambda f: f.stat().st_mtime)
+        files = sorted(all_files, key=lambda f: f.stat().st_mtime if f.exists() else 0)
         # 需要删除的数量（为新图腾出 1 个位置）
         to_remove = len(files) - max_size + 1
         if to_remove <= 0:
@@ -153,7 +301,7 @@ class NovelAIGenerator:
                 f"[MemeMemPlus-NAI] 读取参考图失败: {traceback.format_exc()}")
             return None
 
-    async def run(self, bot_reply: str) -> tuple[bytes | None, str | None]:
+    async def run(self, bot_reply: str, session_id: str = "") -> tuple[bytes | None, str | None]:
         """完整流程：补全标签 → 生图 → 保存。
 
         Returns:
@@ -173,7 +321,7 @@ class NovelAIGenerator:
             if not cfg.valid:
                 logger.warning("[MemeMemPlus-NAI] 未找到 LLM 提供商配置，无法补全标签")
                 return None, None
-            extra_tags, extra_negative = await self._generate_tags(cfg, bot_reply, base_tags)
+            extra_tags, extra_negative = await self._generate_tags(cfg, bot_reply, base_tags, session_id)
             if not extra_tags:
                 logger.warning("[MemeMemPlus-NAI] LLM 标签补全失败，使用基础标签生图")
                 full_tags = base_tags
@@ -193,6 +341,23 @@ class NovelAIGenerator:
             r18_custom = self.settings.novelai_r18_custom_tags.strip()
             if r18_custom:
                 full_tags = f"{full_tags}, {r18_custom}"
+
+        # 穿搭 tags：直接拼接到末尾，用 (tag:weight) 控制权重
+        if getattr(self.settings, "novelai_use_outfit", False):
+            if not llm_enabled:
+                # 穿搭需要 LLM 转换，非 LLM 模式时跳过
+                logger.debug("[MemeMemPlus-NAI] LLM 已关闭，跳过穿搭 tag 注入")
+                outfit_tags = ""
+            else:
+                outfit_tags = await self._refresh_outfit_tags(cfg)
+            if outfit_tags:
+                ow = getattr(self.settings, "novelai_outfit_weight", 0.85)
+                if abs(ow - 1.0) < 0.01:
+                    # 权重为 1.0 时不加权重标记
+                    full_tags = f"{full_tags}, {outfit_tags}"
+                else:
+                    weighted = ", ".join(f"({t.strip()}:{ow})" for t in outfit_tags.split(",") if t.strip())
+                    full_tags = f"{full_tags}, {weighted}"
 
         logger.info(f"[MemeMemPlus-NAI] 最终正向标签: {full_tags}")
         if extra_negative:
@@ -250,7 +415,7 @@ class NovelAIGenerator:
             return None
 
     async def _generate_tags(
-        self, cfg: LLMApiConfig, bot_reply: str, base_tags: str
+        self, cfg: LLMApiConfig, bot_reply: str, base_tags: str, session_id: str = ""
     ) -> tuple[str | None, str | None]:
         """调用 LLM 根据对话内容补全角色标签。
 
@@ -262,19 +427,37 @@ class NovelAIGenerator:
         prompt = template.replace("{base_tags}", base_tags).replace(
             "{bot_reply}", bot_reply[:500]
         )
+        # 注入标签历史上下文，使画面风格连贯（越旧权重越低，按会话隔离）
+        history_size = getattr(self.settings, "novelai_tag_history_size", 5)
+        max_weight = getattr(self.settings, "novelai_history_weight", 0.8)
+        session_history = self._get_session_history(session_id) if session_id else None
+        if history_size > 0 and session_history:
+            recent = list(session_history)[-history_size:]
+            n = len(recent)
+            min_weight = 0.3
+            history_lines = []
+            for i, t in enumerate(recent):
+                weight = round(min_weight + (max_weight - min_weight) * (i / max(n - 1, 1)), 2) if n > 1 else round(max_weight * 0.6, 2)
+                history_lines.append(f"  [{i+1}] (weight {weight}): {t}")
+            prompt += (
+                f"\n\nRecent generated tags (for gradual visual continuity, NOT for copying). "
+                f"Weights indicate how much to reference — {max_weight} = light hint, {min_weight} = barely consider:\n"
+                + "\n".join(history_lines) + "\n"
+            )
         is_r18 = self.settings.novelai_r18
         # R18 模式：追加 NSFW 标签生成指令（含 NEGATIVE 行输出格式）
         if is_r18:
             prompt += R18_TAG_ADDON
-        else:
-            # 非 R18：强制 SFW 约束，防止 LLM 生成擦边标签
+        elif getattr(self.settings, "novelai_safe_mode", True):
+            # 安全模式：强制 SFW 约束，防止 LLM 生成擦边标签
             prompt += SFW_TAG_ADDON
+        # 安全模式关闭且非 R18：LLM 自由生成，不追加任何约束
         system_msg = (
             "You are a tag generator. Output ONLY comma-separated English tags. "
             "No explanation, no numbering, no markdown."
         )
 
-        logger.info(f"[MemeMemPlus-NAI] 标签生成提示词:\n{prompt}")
+        logger.debug(f"[MemeMemPlus-NAI] 标签生成提示词:\n{prompt}")
 
         try:
             result = await LLMClient.call(
@@ -285,8 +468,16 @@ class NovelAIGenerator:
                 timeout=self.settings.llm_timeout,
             )
             if result:
-                logger.info(f"[MemeMemPlus-NAI] LLM 原始输出:\n{result}")
-                return self._parse_tag_result(result, is_r18)
+                logger.debug(f"[MemeMemPlus-NAI] LLM 原始输出:\n{result}")
+                positive, negative = self._parse_tag_result(result, is_r18)
+                # 缓存正向标签供后续生图参考（仅在标签历史功能开启时，按会话隔离）
+                sh = self._get_session_history(session_id) if session_id else None
+                logger.debug(f"[MemeMemPlus-NAI] 标签解析结果: positive={bool(positive)}, history_size={history_size}, 当前历史={len(sh) if sh else 0}")
+                if positive and history_size > 0 and sh is not None:
+                    sh.append(positive)
+                    self._save_session_cache(session_id)
+                    logger.debug(f"[MemeMemPlus-NAI] 标签已入栈, 历史数={len(sh)}")
+                return positive, negative
         except Exception:
             logger.error(f"[MemeMemPlus-NAI] 标签补全异常: {traceback.format_exc()}")
         return None, None
@@ -313,7 +504,7 @@ class NovelAIGenerator:
                 pos_parts.append(stripped.rstrip(',').strip())
 
         if pos_parts:
-            positive = ", ".join(pos_parts).replace("\n", ", ")
+            positive = ", ".join(pos_parts)
 
         if not negative and is_r18:
             logger.debug("[MemeMemPlus-NAI] LLM 未输出 NEGATIVE 行，仅使用配置负向标签")

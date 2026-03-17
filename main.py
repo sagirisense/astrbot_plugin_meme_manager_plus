@@ -153,7 +153,8 @@ class MoodMemePlugin(Star):
             return
 
         session_id = event.session_id
-        group_id = str(getattr(event.message_obj, "group_id", "")) or None
+        group_id = getattr(event.message_obj, "group_id", None)
+        group_id = str(group_id) if group_id else None
 
         # NovelAI 模式：开启时走独立流程，跳过心情表情
         if self.settings.novelai_enabled:
@@ -256,7 +257,7 @@ class MoodMemePlugin(Star):
         """NovelAI 后台任务：LLM 补全标签 → NAI API 生图 → 发送。"""
         try:
             logger.info("[MemeMemPlus-NAI] 开始生图流程")
-            image_bytes, save_path = await self.novelai_gen.run(text)
+            image_bytes, save_path = await self.novelai_gen.run(text, session_id=session_id)
             if not image_bytes:
                 logger.warning("[MemeMemPlus-NAI] 生图失败")
                 return
@@ -395,16 +396,72 @@ class MoodMemePlugin(Star):
 
     @filter.command("心情表情刷新")
     async def refresh_library(self, event: AstrMessageEvent):
-        """重新扫描图库目录，同步已删除图片的黑名单。"""
+        """重新扫描图库目录，同步已删除图片的黑名单，清空 NAI 标签缓存。"""
         self.library_mgr.refresh()
         self.auto_updater.reload_seen_ids()
+        self.novelai_gen.clear_tag_caches()
         stats = self.library_mgr.get_stats()
         total = sum(stats.values())
         blocked = self.auto_updater.seen_ids_count
         yield event.plain_result(
             f"图库已刷新: {len(stats)} 个心情, 共 {total} 张参考图\n"
-            f"已记录 {blocked} 个 booru ID（含回收站）"
+            f"已记录 {blocked} 个 booru ID（含回收站）\n"
+            f"NAI 标签缓存已清空"
         )
+
+    @filter.command("ni重置")
+    async def reset_nai_caches(self, event: AstrMessageEvent):
+        """清空 NovelAI 标签历史和穿搭缓存。可在 /reset 后手动执行。"""
+        self.novelai_gen.clear_tag_caches()
+        yield event.plain_result("NAI 标签历史和穿搭缓存已清空")
+
+    @filter.command("穿搭")
+    async def toggle_outfit(self, event: AstrMessageEvent, flag: str = ""):
+        """运行时切换穿搭注入。/穿搭 0 关闭，/穿搭 {任意值} 开启。"""
+        if flag.strip() == "0":
+            self.settings.novelai_use_outfit = False
+            yield event.plain_result("穿搭注入已关闭（缓存保留，重新开启后立即可用）")
+        elif flag.strip():
+            self.settings.novelai_use_outfit = True
+            cached = self.novelai_gen._cached_outfit_tags
+            if cached:
+                yield event.plain_result(f"穿搭注入已开启\n当前缓存: {cached}")
+            else:
+                yield event.plain_result("穿搭注入已开启，下次生图时自动获取穿搭")
+        else:
+            status = "开启" if self.settings.novelai_use_outfit else "关闭"
+            outfit_tags = self.novelai_gen._cached_outfit_tags or "无"
+            # 汇总所有会话的标签历史
+            all_history = self.novelai_gen._tag_history
+            total_entries = sum(len(q) for q in all_history.values())
+            num_sessions = len(all_history)
+            history_str = f"{total_entries} 条 ({num_sessions} 个会话)" if total_entries else "空"
+            # 诊断：检查 life_scheduler 连接状态
+            gen = self.novelai_gen
+            raw_outfit = gen._get_raw_outfit()
+            plugin_found = gen._life_plugin is not None
+            enabled = self.settings.enabled
+            nai_on = self.settings.novelai_enabled
+            llm_on = self.settings.novelai_llm_enabled
+            lines = [
+                f"插件总开关: {'开启' if enabled else '关闭（自动生图被禁用！）'}",
+                f"NovelAI 模式: {'开启' if nai_on else '关闭'}",
+                f"LLM 标签补全: {'开启' if llm_on else '关闭（标签历史/穿搭需要 LLM 补全开启）'}",
+                f"穿搭注入: {status}",
+                f"穿搭 tags: {outfit_tags}",
+                f"标签历史: {history_str} (参考最近 {self.settings.novelai_tag_history_size} 条)",
+                f"--- 诊断 ---",
+                f"life_scheduler: {'已找到' if plugin_found else '未找到'}",
+                f"穿搭原文: {raw_outfit or '无'}",
+                f"概率: {self.settings.novelai_probability}% | 冷却: {self.settings.novelai_cooldown_seconds}s",
+            ]
+            if total_entries:
+                lines.append("--- 最近标签（所有会话） ---")
+                for sid, q in all_history.items():
+                    if q:
+                        last = list(q)[-1]
+                        lines.append(f"  {sid[:20]}: {last[:50]}{'...' if len(last) > 50 else ''}")
+            yield event.plain_result("\n".join(lines))
 
     @filter.command("自动搜图开启")
     async def enable_auto_update(self, event: AstrMessageEvent):
