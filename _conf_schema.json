@@ -261,7 +261,7 @@
       "novelai_tag_history_size": {
         "description": "标签历史上下文",
         "type": "int",
-        "default": 5,
+        "default": 0,
         "hint": "LLM 补全标签时参考最近 N 次生图的标签，使画面风格/场景连贯过渡。0=关闭，最大 20"
       },
       "novelai_history_weight": {
@@ -304,14 +304,14 @@
       "novelai_base_tags": {
         "description": "角色基础标签（必填）",
         "type": "string",
-        "default": "1girl, {{{solo}}}, {{{eris boreas greyrat}}}, mushoku tensei",
-        "hint": "角色固定标签（逗号分隔），每次生图都会带上。例如: 1girl, red hair, long hair, blue eyes, school uniform。LLM 会在此基础上补全表情/动作/场景标签"
+        "default": "1girl, solo",
+        "hint": "角色固定标签（逗号分隔），每次生图都会带上。例如: 1girl, {{{solo}}}, {{{hatsune miku}}}, vocaloid, blue hair, twintails。{{{tag}}} 表示强调。LLM 会在此基础上补全表情/动作/场景标签"
       },
       "novelai_negative_prompt": {
         "description": "负面提示词",
         "type": "string",
-        "default": "lowres, bad anatomy, bad hands, missing fingers, extra digit, fewer digits",
-        "hint": "不希望出现的元素（逗号分隔）。R18 模式下 LLM 还会动态追加与场景矛盾的负向标签"
+        "default": "lowres, {bad}, error, missing, extra, fewer, cropped, worst quality, bad quality, watermark, text, signature, jpeg artifacts, blurry, flat color",
+        "hint": "不希望出现的元素（逗号分隔）。默认值已覆盖常见质量问题。R18 模式下 LLM 还会动态追加与场景矛盾的负向标签"
       },
       "novelai_custom_tags": {
         "description": "自定义追加标签（通用）",

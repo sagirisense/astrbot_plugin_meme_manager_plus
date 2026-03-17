@@ -428,7 +428,7 @@ class NovelAIGenerator:
             "{bot_reply}", bot_reply[:500]
         )
         # 注入标签历史上下文，使画面风格连贯（越旧权重越低，按会话隔离）
-        history_size = getattr(self.settings, "novelai_tag_history_size", 5)
+        history_size = getattr(self.settings, "novelai_tag_history_size", 0)
         max_weight = getattr(self.settings, "novelai_history_weight", 0.8)
         session_history = self._get_session_history(session_id) if session_id else None
         if history_size > 0 and session_history:

@@ -89,8 +89,8 @@ class PluginSettings:
     novelai_enabled: bool = False
     novelai_api_key: str = ""
     novelai_model: str = "nai-diffusion-4-5-full"
-    novelai_base_tags: str = "1girl, {{{solo}}}, {{{eris boreas greyrat}}}, mushoku tensei"
-    novelai_negative_prompt: str = "lowres, bad anatomy, bad hands, missing fingers, extra digit, fewer digits"
+    novelai_base_tags: str = "1girl, solo"
+    novelai_negative_prompt: str = "lowres, {bad}, error, missing, extra, fewer, cropped, worst quality, bad quality, watermark, text, signature, jpeg artifacts, blurry, flat color"
     novelai_probability: int = 30
     novelai_width: int = 832
     novelai_height: int = 1216
@@ -106,7 +106,7 @@ class PluginSettings:
     novelai_llm_enabled: bool = True  # 是否用 LLM 补全标签，关闭后直接用 base_tags
     novelai_sticker_mode: bool = True  # NovelAI 独立小图模式
     novelai_direct_model: str = ""  # /ni 原图模式专用模型，留空使用 novelai_model
-    novelai_tag_history_size: int = 5  # 标签历史缓存条数，0=关闭
+    novelai_tag_history_size: int = 0  # 标签历史缓存条数，0=关闭
     novelai_history_weight: float = 0.8  # 标签历史最新条目权重（最旧=0.3，线性衰减到此值）
     novelai_outfit_weight: float = 0.85  # 穿搭 tag 权重
     novelai_cooldown_seconds: int = 60
@@ -207,8 +207,8 @@ class ConfigLoader:
         s.novelai_enabled = self._get("novelai_settings", "novelai_enabled", default=False)
         s.novelai_api_key = self._get("novelai_settings", "novelai_api_key", default="")
         s.novelai_model = self._get("novelai_settings", "novelai_model", default="nai-diffusion-4-5-full")
-        s.novelai_base_tags = self._get("novelai_settings", "novelai_base_tags", default="1girl, {{{solo}}}, {{{eris boreas greyrat}}}, mushoku tensei")
-        s.novelai_negative_prompt = self._get("novelai_settings", "novelai_negative_prompt", default="lowres, bad anatomy, bad hands, missing fingers, extra digit, fewer digits")
+        s.novelai_base_tags = self._get("novelai_settings", "novelai_base_tags", default="1girl, solo")
+        s.novelai_negative_prompt = self._get("novelai_settings", "novelai_negative_prompt", default="lowres, {bad}, error, missing, extra, fewer, cropped, worst quality, bad quality, watermark, text, signature, jpeg artifacts, blurry, flat color")
         s.novelai_probability = self._get("novelai_settings", "novelai_probability", default=30)
         s.novelai_width = self._get("novelai_settings", "novelai_width", default=832)
         s.novelai_height = self._get("novelai_settings", "novelai_height", default=1216)
@@ -224,7 +224,7 @@ class ConfigLoader:
         s.novelai_llm_enabled = self._get("novelai_settings", "novelai_llm_enabled", default=True)
         s.novelai_sticker_mode = self._get("novelai_settings", "novelai_sticker_mode", default=True)
         s.novelai_direct_model = self._get("novelai_settings", "novelai_direct_model", default="")
-        s.novelai_tag_history_size = self._get("novelai_settings", "novelai_tag_history_size", default=5)
+        s.novelai_tag_history_size = self._get("novelai_settings", "novelai_tag_history_size", default=0)
         s.novelai_history_weight = self._get("novelai_settings", "novelai_history_weight", default=0.8)
         s.novelai_outfit_weight = self._get("novelai_settings", "novelai_outfit_weight", default=0.85)
         s.novelai_cooldown_seconds = self._get("novelai_settings", "novelai_cooldown_seconds", default=60)
