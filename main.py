@@ -521,9 +521,9 @@ class MoodMemePlugin(Star):
         count = min(max(1, count), 50)
         source = self.settings.auto_update_source.lower()
         if source == "pixiv":
-            keyword = getattr(self.settings, "pixiv_search_keyword", "").strip()
+            keyword = self.settings.pixiv_search_keyword.strip()
             search_word = keyword if keyword else self.settings.auto_update_search_tags
-            search_target = getattr(self.settings, "pixiv_search_target", "partial_match_for_tags")
+            search_target = self.settings.pixiv_search_target
             info = f"关键词: {search_word}\n来源: pixiv ({search_target})"
         else:
             info = f"标签: {self.settings.auto_update_search_tags}\n来源: {source}"

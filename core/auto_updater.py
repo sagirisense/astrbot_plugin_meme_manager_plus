@@ -288,9 +288,9 @@ class AutoUpdater:
 
         if source == "pixiv":
             # Pixiv: 优先用专用关键词，没有则回退到通用搜索标签
-            keyword = getattr(self.settings, "pixiv_search_keyword", "").strip()
+            keyword = self.settings.pixiv_search_keyword.strip()
             search_word = keyword if keyword else self.settings.auto_update_search_tags.strip()
-            search_target = getattr(self.settings, "pixiv_search_target", "partial_match_for_tags")
+            search_target = self.settings.pixiv_search_target
             logger.info(
                 f"[MemeMemPlus] 搜索参数: source=pixiv, word='{search_word}', "
                 f"target={search_target}, limit={limit}, min_score={min_score}"
@@ -312,7 +312,7 @@ class AutoUpdater:
         self, raw: list[dict], limit: int, min_score: int, source: str
     ) -> list[dict]:
         """统一过滤：去重、评分、R18、格式。返回最多 limit 条。"""
-        allow_r18 = getattr(self.settings, "pixiv_allow_r18", False)
+        allow_r18 = self.settings.pixiv_allow_r18
         results = []
         skipped_seen = 0
         skipped_score = 0
@@ -482,7 +482,7 @@ class AutoUpdater:
                 })
 
             # 够了就不翻页 — 预估可用数需排除已见、低分、R18
-            allow_r18 = getattr(self.settings, "pixiv_allow_r18", False)
+            allow_r18 = self.settings.pixiv_allow_r18
             usable = sum(
                 1 for r in raw
                 if r["id"] not in self._seen_ids

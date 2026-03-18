@@ -112,11 +112,18 @@ class NovelAIGenerator:
         self._cached_outfit_text: str = ""
         self._cached_outfit_tags: str = ""
 
+    _MAX_TRACKED_SESSIONS = 200
+
     def record_message(self, session_id: str, user_text: str, bot_text: str) -> None:
         """记录一条对话消息（用户输入+Bot回复），用于穿搭情景适配判断。"""
         if not session_id:
             return
         if session_id not in self._msg_history:
+            # 限制跟踪的会话数，防止长期运行内存泄漏
+            if len(self._msg_history) >= self._MAX_TRACKED_SESSIONS:
+                oldest_key = next(iter(self._msg_history))
+                del self._msg_history[oldest_key]
+                self._last_adapted_tags.pop(oldest_key, None)
             self._msg_history[session_id] = collections.deque(maxlen=50)
         self._msg_history[session_id].append((user_text, bot_text))
 
@@ -165,6 +172,9 @@ class NovelAIGenerator:
             return self._cached_outfit_tags
         # 穿搭变化
         logger.debug(f"[MemeMemPlus-NAI] 穿搭变化检测: 旧='{self._cached_outfit_text[:30]}' 新='{raw[:30]}'")
+        # 基础穿搭变了，清除所有会话的适配历史和消息历史（旧上下文已过时）
+        self._last_adapted_tags.clear()
+        self._msg_history.clear()
         if not raw:
             self._cached_outfit_text = ""
             self._cached_outfit_tags = ""
@@ -226,8 +236,6 @@ class NovelAIGenerator:
         # 取最近 N 条对话消息
         n = self.settings.novelai_outfit_history
         recent = list(history)[-n:]
-        if not recent:
-            return current_tags
         # 构造对话上下文
         conv_lines = []
         for user_msg, bot_msg in recent:
@@ -287,7 +295,8 @@ class NovelAIGenerator:
             )
             logger.debug(f"[MemeMemPlus-NAI] 穿搭适配 LLM 输出: '{result}'")
             if not result or result.strip().upper() == "KEEP":
-                return current_tags
+                # KEEP = 维持当前状态（上次适配结果 > 基础穿搭）
+                return self._last_adapted_tags.get(session_id, current_tags)
             lines = [l.strip().rstrip(",").strip() for l in result.splitlines() if l.strip()]
             adapted = ", ".join(lines).rstrip(",").strip()
             if adapted:
@@ -297,7 +306,7 @@ class NovelAIGenerator:
             return current_tags
         except Exception as e:
             logger.debug(f"[MemeMemPlus-NAI] 穿搭适配判断失败: {e}")
-            return current_tags
+            return self._last_adapted_tags.get(session_id, current_tags)
 
     def clear_caches(self) -> None:
         """清空对话历史、穿搭缓存和适配历史。外部可在 /reset 等场景调用。"""
@@ -335,7 +344,12 @@ class NovelAIGenerator:
                     f for f in d.iterdir()
                     if f.is_file() and f.suffix.lower() in exts
                 )
-        files = sorted(all_files, key=lambda f: f.stat().st_mtime if f.exists() else 0)
+        def _safe_mtime(f: Path) -> float:
+            try:
+                return f.stat().st_mtime
+            except OSError:
+                return 0.0
+        files = sorted(all_files, key=_safe_mtime)
         # 需要删除的数量（为新图腾出 1 个位置）
         to_remove = len(files) - max_size + 1
         if to_remove <= 0:
@@ -379,7 +393,7 @@ class NovelAIGenerator:
             if not cfg.valid:
                 logger.warning("[MemeMemPlus-NAI] 未找到 LLM 提供商配置，无法补全标签")
                 return None, None
-            extra_tags, extra_negative = await self._generate_tags(cfg, bot_reply, base_tags, session_id)
+            extra_tags, extra_negative = await self._generate_tags(cfg, bot_reply, base_tags)
             if not extra_tags:
                 logger.warning("[MemeMemPlus-NAI] LLM 标签补全失败，使用基础标签生图")
                 full_tags = base_tags
@@ -479,7 +493,7 @@ class NovelAIGenerator:
             return None
 
     async def _generate_tags(
-        self, cfg: LLMApiConfig, bot_reply: str, base_tags: str, session_id: str = ""
+        self, cfg: LLMApiConfig, bot_reply: str, base_tags: str,
     ) -> tuple[str | None, str | None]:
         """调用 LLM 根据对话内容补全角色标签。
 

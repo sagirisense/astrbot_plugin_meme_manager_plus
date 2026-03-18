@@ -2,6 +2,23 @@
 
 AI 心情表情管理器 — 自动分析 Bot 回复的情绪与表达欲望，双级概率独立判定，智能生成风格多变的表情图片。
 
+## NovelAI 角色扮演生图效果展示
+
+> 预设角色外貌 + LLM 根据对话生成情景 TAG + 日程穿搭注入 → 连贯的角色扮演插画。穿搭随场景自动切换，颜色、款式等细节跨图保持一致。
+
+<p align="center">
+  <img src="docs/examples/example_01_school.jpg" width="150" alt="上课 · 制服"/>
+  <img src="docs/examples/example_02_sport.jpg" width="150" alt="运动 · 运动服"/>
+  <img src="docs/examples/example_03_casual.jpg" width="150" alt="换装 · 便装"/>
+  <img src="docs/examples/example_04_home.jpg" width="150" alt="居家 · 开衫"/>
+  <img src="docs/examples/example_05_sleep.jpg" width="150" alt="睡前 · 睡裙"/>
+</p>
+<p align="center">
+  <sub>上课 · 制服 → 运动 · 运动服 → 换装 · 便装 → 居家 · 开衫 → 睡前 · 睡裙</sub>
+</p>
+
+同一角色在不同对话场景下自动生成——穿搭由 `life_scheduler` 提供日程穿搭，情景适配 LLM 根据对话上下文临时调整（如"一起泡澡吧"→浴巾、"去运动"→运动服），且上次输出的穿着细节（颜色、材质）会自动传递给下一次判断，保持连贯。
+
 ## 功能特性
 
 - **双级概率系统**：表达欲望评分 + LLM 生图概率独立判定，可分别开关和调节
@@ -338,7 +355,14 @@ LLM Vision 分析每张图片的表情/心情
 - **穿搭适配细节强化**：prompt 要求 LLM 输出最大化细节的穿着标签（如 `pink_lace_bra` 而非 `bra`），并在穿着变化时只修改对话中明确变化的部分
 - **新增配置项 `novelai_outfit_history`**：控制穿搭情景适配参考的对话条数，默认 20 条，无上限
 - **对话消息自动记录**：每次 Bot 回复时自动记录用户输入和回复内容到内存（按会话隔离，最多 50 条），供穿搭情景适配使用
-- **代码清理**：移除废弃的 `getattr` 防御代码，所有配置字段改为直接属性访问
+- **代码清理**：移除所有废弃的 `getattr` 防御代码（`novelai_generator`、`auto_updater`、`main`），所有配置字段改为直接属性访问；移除 `_adapt_outfit_tags` 中冗余的空列表检查
+- **修复 KEEP 返回基础穿搭而非上次适配（严重）**：`_adapt_outfit_tags` 在 LLM 返回 KEEP 时错误地返回基础穿搭 tag，导致正在泡澡的角色突然穿回 T 恤。现在 KEEP 正确返回上次适配结果
+- **修复适配异常时丢失穿着状态**：`_adapt_outfit_tags` 在 LLM 调用异常时返回基础穿搭而非上次适配结果，导致网络抖动时角色穿着状态回退。现在异常时也保持上次适配状态
+- **修复基础穿搭变化未清除适配缓存**：`_refresh_outfit_tags` 检测到穿搭文本变化时未清除 `_last_adapted_tags`，导致新穿搭下 LLM 仍参考旧适配结果
+- **修复缓存清理 TOCTOU 竞态（严重）**：`_enforce_cache_limit` 中 `f.exists()` 与 `f.stat()` 之间文件可能被并发删除导致 `FileNotFoundError`。改用 try/except 的 `_safe_mtime` 辅助函数
+- **移除 `_generate_tags` 废弃参数**：清理 v3.7.0 移除标签历史后遗留的 `session_id` 参数
+- **防止会话历史内存泄漏**：`_msg_history` 新增最大 200 会话数限制，超限时淘汰最早的会话并清理对应的适配缓存
+- **修复穿搭变化未清空消息历史**：`_refresh_outfit_tags` 检测到穿搭变化时仅清除了适配缓存，未清除 `_msg_history`，导致 LLM 基于旧穿搭下的对话上下文做换装判断
 
 ### v3.6.1
 
