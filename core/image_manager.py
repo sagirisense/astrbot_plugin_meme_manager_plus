@@ -258,7 +258,7 @@ class MoodImageManager:
             ratio = max_size / max(w, h)
             img = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
         # 转 RGB（去掉 alpha）
-        if img.mode in ("RGBA", "P"):
+        if img.mode in ("RGBA", "P", "LA"):
             img = img.convert("RGB")
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=quality)

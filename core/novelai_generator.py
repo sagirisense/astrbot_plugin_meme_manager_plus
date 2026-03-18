@@ -8,7 +8,6 @@
 import base64
 import collections
 import hashlib
-import json
 import random
 import zipfile
 import io
@@ -102,61 +101,24 @@ class NovelAIGenerator:
         self.generated_dir.mkdir(parents=True, exist_ok=True)
         # 参考图从配置面板上传，存放在 files/novelai_reference_image/ 目录
         self._ref_dir = plugin_dir / "files" / "novelai_reference_image"
-        # 标签历史缓存：按会话隔离，每个 session_id 独立的 deque
-        self._tag_history: dict[str, collections.deque[str]] = {}
-        self._tag_cache_dir = plugin_dir / "tag_cache"
-        self._tag_cache_dir.mkdir(parents=True, exist_ok=True)
-        self._load_all_tag_caches()
+        # 对话消息历史：按会话隔离，用于穿搭情景适配判断
+        # 每条记录为 (user_text, bot_text)
+        self._msg_history: dict[str, collections.deque[tuple[str, str]]] = {}
+        # 上次穿搭适配输出的 tags：按会话隔离，用于保持穿着连续性
+        self._last_adapted_tags: dict[str, str] = {}
         # life_scheduler 插件实例缓存
         self._life_plugin = None
         # 穿搭 tag 缓存：仅在穿搭文本变化时重新生成
         self._cached_outfit_text: str = ""
         self._cached_outfit_tags: str = ""
 
-    def _get_session_history(self, session_id: str) -> collections.deque:
-        """获取指定会话的标签历史 deque，不存在则创建。"""
-        if session_id not in self._tag_history:
-            self._tag_history[session_id] = collections.deque()
-        return self._tag_history[session_id]
-
-    def _session_cache_path(self, session_id: str) -> Path:
-        """会话缓存文件路径：tag_cache/<safe_name>.json"""
-        safe = hashlib.md5(session_id.encode()).hexdigest()[:12]
-        return self._tag_cache_dir / f"{safe}.json"
-
-    def _save_session_cache(self, session_id: str) -> None:
-        """将指定会话的标签历史持久化到文件。最多保存最近 500 条防止文件过大。"""
+    def record_message(self, session_id: str, user_text: str, bot_text: str) -> None:
+        """记录一条对话消息（用户输入+Bot回复），用于穿搭情景适配判断。"""
         if not session_id:
             return
-        q = self._tag_history.get(session_id)
-        if not q:
-            return
-        try:
-            tags = list(q)[-500:]  # 磁盘保留上限，内存保持完整
-            data = {"session_id": session_id, "tags": tags}
-            self._session_cache_path(session_id).write_text(
-                json.dumps(data, ensure_ascii=False), encoding="utf-8"
-            )
-        except Exception:
-            pass
-
-    def _load_all_tag_caches(self) -> None:
-        """启动时从 tag_cache/ 恢复所有会话历史。"""
-        if not self._tag_cache_dir.exists():
-            return
-        for f in self._tag_cache_dir.iterdir():
-            if f.suffix != ".json":
-                continue
-            try:
-                data = json.loads(f.read_text(encoding="utf-8"))
-                sid = data.get("session_id", "")
-                tags = data.get("tags", [])
-                if sid and tags:
-                    q = collections.deque(tags)
-                    self._tag_history[sid] = q
-                    logger.debug(f"[MemeMemPlus-NAI] 恢复会话标签历史: {sid[:20]}... ({len(q)} 条)")
-            except Exception:
-                pass
+        if session_id not in self._msg_history:
+            self._msg_history[session_id] = collections.deque(maxlen=50)
+        self._msg_history[session_id].append((user_text, bot_text))
 
     def _get_raw_outfit(self) -> str | None:
         """从 life_scheduler 插件获取今日穿搭原始文本。"""
@@ -203,22 +165,39 @@ class NovelAIGenerator:
             return self._cached_outfit_tags
         # 穿搭变化
         logger.debug(f"[MemeMemPlus-NAI] 穿搭变化检测: 旧='{self._cached_outfit_text[:30]}' 新='{raw[:30]}'")
-        self._cached_outfit_text = raw
         if not raw:
+            self._cached_outfit_text = ""
             self._cached_outfit_tags = ""
             logger.info("[MemeMemPlus-NAI] 穿搭已清空")
             return ""
         # LLM 转换穿搭描述为 NovelAI tags
         try:
             prompt = (
-                f"Convert this outfit description to NovelAI image tags (comma-separated English tags only):\n"
+                f"Convert this character appearance description to specific NovelAI image tags "
+                f"(comma-separated English tags only):\n"
                 f"{raw}\n\n"
-                f"Output ONLY comma-separated clothing/accessory tags. No explanation."
+                f"Rules:\n"
+                f"1. Include ALL appearance details: hairstyle, hair color, outerwear, "
+                f"clothing, footwear, accessories.\n"
+                f"2. Use the MOST SPECIFIC tag variant. Examples:\n"
+                f"   - 'denim short_shorts' not just 'shorts'\n"
+                f"   - 'black pleated_skirt' not just 'skirt'\n"
+                f"   - 'white oversized_hoodie' not just 'hoodie'\n"
+                f"   - 'low_ponytail' not just 'ponytail'\n"
+                f"3. Add body exposure tags implied by the clothing:\n"
+                f"   - short sleeves / sleeveless → bare_arms\n"
+                f"   - shorts / short skirt → bare_legs, thighs\n"
+                f"   - crop top / midriff → bare_shoulders, navel\n"
+                f"   - sandals / barefoot → bare_feet\n"
+                f"4. Describe clothing style details (material, pattern, fit):\n"
+                f"   - e.g. 'striped long_sleeves', 'plaid_shirt', 'ribbed_sweater', "
+                f"'lace_trim', 'denim_jacket', 'oversized_t-shirt'\n"
+                f"Output ONLY comma-separated tags. No explanation."
             )
             result = await LLMClient.call(
                 cfg, prompt,
-                system_msg="You are a tag converter. Output ONLY comma-separated English tags.",
-                max_tokens=100,
+                system_msg="You are a NovelAI tag expert. Output ONLY comma-separated English tags. Be highly specific about clothing details and implied body exposure.",
+                max_tokens=200,
                 timeout=self.settings.llm_timeout,
             )
             # 多行输出合并为逗号分隔的单行
@@ -227,27 +206,106 @@ class NovelAIGenerator:
                 tags = ", ".join(lines).rstrip(",").strip()
             else:
                 tags = ""
+            self._cached_outfit_text = raw  # 成功后才更新缓存 key，失败时下次可重试
             self._cached_outfit_tags = tags
             logger.info(f"[MemeMemPlus-NAI] 穿搭 tag 已更新: '{raw[:30]}...' → '{tags}'")
         except Exception as e:
-            logger.warning(f"[MemeMemPlus-NAI] 穿搭 tag 转换失败: {e}")
-            self._cached_outfit_tags = ""
+            logger.warning(f"[MemeMemPlus-NAI] 穿搭 tag 转换失败，下次将重试: {e}")
+            # 不更新 _cached_outfit_text，下次调用时 raw != cached 会重试
         return self._cached_outfit_tags
 
-    def clear_tag_caches(self) -> None:
-        """清空标签历史和穿搭缓存。外部可在 /reset 等场景调用。"""
-        self._tag_history.clear()
+    async def _adapt_outfit_tags(self, cfg, session_id: str, current_tags: str) -> str:
+        """根据对话历史判断是否需要临时修改穿搭 tag。
+
+        保存每次适配结果到 _last_adapted_tags（按会话），下次适配时传给 LLM
+        以保持穿着连续性（颜色、款式等细节不丢失）。不修改 _cached_outfit_tags。
+        """
+        history = self._msg_history.get(session_id)
+        if not history:
+            return current_tags
+        # 取最近 N 条对话消息
+        n = self.settings.novelai_outfit_history
+        recent = list(history)[-n:]
+        if not recent:
+            return current_tags
+        # 构造对话上下文
+        conv_lines = []
+        for user_msg, bot_msg in recent:
+            if user_msg:
+                conv_lines.append(f"用户: {user_msg[:100]}")
+            if bot_msg:
+                conv_lines.append(f"Bot: {bot_msg[:100]}")
+        conversation = "\n".join(conv_lines)
+
+        # 上次适配输出的 tags（可能与 base outfit 不同）
+        last_adapted = self._last_adapted_tags.get(session_id, "")
+
+        prompt = (
+            f"Base outfit tags (daily default): {current_tags}\n"
+        )
+        if last_adapted and last_adapted != current_tags:
+            prompt += f"Last generated outfit tags (from previous image): {last_adapted}\n"
+        prompt += (
+            f"\nRecent conversation ({len(recent)} messages):\n{conversation}\n\n"
+            f"Judge: based on the conversation, what should the character be wearing RIGHT NOW?\n\n"
+            f"CONTINUITY RULES (HIGHEST PRIORITY):\n"
+            f"- If last generated tags exist, treat them as the character's CURRENT state\n"
+            f"- Preserve specific details from the last output: colors (pink_panties stays pink),\n"
+            f"  materials (lace, cotton, silk), patterns (striped, polka_dot), styles (high-waist, low-rise)\n"
+            f"- Only change items that the conversation explicitly changes\n"
+            f"- Example: if last output had 'pink_lace_bra, pink_lace_panties' and user says '脱掉上衣',\n"
+            f"  keep 'pink_lace_panties' but remove the bra-related tags\n\n"
+            f"DETAIL RULES:\n"
+            f"- Be MAXIMALLY specific about every clothing item: include color, material, style\n"
+            f"- BAD: underwear, bra, panties (too vague)\n"
+            f"- GOOD: pink_lace_bra, white_cotton_panties, black_silk_nightgown, light_blue_striped_pajamas\n"
+            f"- Include body exposure tags implied by the outfit state\n\n"
+            f"SCENE HINTS:\n"
+            f"- 洗澡/泡澡/淋浴 → towel, bare_shoulders, wet_hair, or nude depending on context\n"
+            f"- 游泳 → swimsuit/bikini with colors\n"
+            f"- 睡觉 → pajamas/nightgown with specific style\n"
+            f"- 换衣/脱衣 → modify items accordingly, keep unchanged items with full detail\n\n"
+            f"If outfit should CHANGE: output MODIFIED comma-separated tags with FULL details\n"
+            f"If NO change needed: output ONLY the word KEEP\n"
+            f"Output ONLY tags or KEEP. No explanation."
+        )
+        logger.debug(
+            f"[MemeMemPlus-NAI] 穿搭适配判断: {len(recent)} 条历史, "
+            f"base='{current_tags[:40]}', last='{last_adapted[:40] if last_adapted else '无'}'"
+        )
+        try:
+            result = await LLMClient.call(
+                cfg, prompt,
+                system_msg=(
+                    "You judge if a conversation requires outfit changes for an anime character. "
+                    "Maintain continuity with previous outfit state. "
+                    "Be VERY specific about clothing details (color, material, style). "
+                    "Output modified tags or KEEP."
+                ),
+                max_tokens=200,
+                timeout=self.settings.llm_timeout,
+            )
+            logger.debug(f"[MemeMemPlus-NAI] 穿搭适配 LLM 输出: '{result}'")
+            if not result or result.strip().upper() == "KEEP":
+                return current_tags
+            lines = [l.strip().rstrip(",").strip() for l in result.splitlines() if l.strip()]
+            adapted = ", ".join(lines).rstrip(",").strip()
+            if adapted:
+                self._last_adapted_tags[session_id] = adapted
+                logger.info(f"[MemeMemPlus-NAI] 穿搭情景适配: '{current_tags[:30]}...' → '{adapted[:50]}...'")
+                return adapted
+            return current_tags
+        except Exception as e:
+            logger.debug(f"[MemeMemPlus-NAI] 穿搭适配判断失败: {e}")
+            return current_tags
+
+    def clear_caches(self) -> None:
+        """清空对话历史、穿搭缓存和适配历史。外部可在 /reset 等场景调用。"""
+        self._msg_history.clear()
+        self._last_adapted_tags.clear()
         self._cached_outfit_text = ""
         self._cached_outfit_tags = ""
-        # 清除持久化文件
-        if self._tag_cache_dir.exists():
-            for f in self._tag_cache_dir.iterdir():
-                if f.suffix == ".json":
-                    try:
-                        f.unlink()
-                    except Exception:
-                        pass
-        logger.info("[MemeMemPlus-NAI] 标签历史和穿搭缓存已清空")
+        logger.info("[MemeMemPlus-NAI] 对话历史和穿搭缓存已清空")
 
     @property
     def has_reference(self) -> bool:
@@ -265,7 +323,7 @@ class NovelAIGenerator:
 
     def _enforce_cache_limit(self) -> None:
         """如果 novelai/ 及 generated/ 目录图片数超过上限，删除最旧的图片腾出空间。"""
-        max_size = getattr(self.settings, "novelai_max_cache", 0)
+        max_size = self.settings.novelai_max_cache
         if max_size <= 0:
             return
         exts = (".jpg", ".jpeg", ".png", ".webp")
@@ -313,7 +371,7 @@ class NovelAIGenerator:
             return None, None
 
         extra_negative = None
-        llm_enabled = getattr(self.settings, "novelai_llm_enabled", True)
+        llm_enabled = self.settings.novelai_llm_enabled
 
         if llm_enabled:
             # LLM 模式：用 LLM 根据对话内容补全标签
@@ -343,15 +401,21 @@ class NovelAIGenerator:
                 full_tags = f"{full_tags}, {r18_custom}"
 
         # 穿搭 tags：直接拼接到末尾，用 (tag:weight) 控制权重
-        if getattr(self.settings, "novelai_use_outfit", False):
+        if self.settings.novelai_use_outfit:
             if not llm_enabled:
                 # 穿搭需要 LLM 转换，非 LLM 模式时跳过
                 logger.debug("[MemeMemPlus-NAI] LLM 已关闭，跳过穿搭 tag 注入")
                 outfit_tags = ""
             else:
                 outfit_tags = await self._refresh_outfit_tags(cfg)
+                # 情景适配：根据对话历史临时修改穿搭（不修改缓存）
+                adapt_on = self.settings.novelai_outfit_adapt
+                if outfit_tags and adapt_on:
+                    outfit_tags = await self._adapt_outfit_tags(cfg, session_id, outfit_tags)
+                elif adapt_on and not outfit_tags:
+                    logger.debug("[MemeMemPlus-NAI] 穿搭适配已开启但无穿搭 tag，跳过")
             if outfit_tags:
-                ow = getattr(self.settings, "novelai_outfit_weight", 0.85)
+                ow = self.settings.novelai_outfit_weight
                 if abs(ow - 1.0) < 0.01:
                     # 权重为 1.0 时不加权重标记
                     full_tags = f"{full_tags}, {outfit_tags}"
@@ -427,28 +491,11 @@ class NovelAIGenerator:
         prompt = template.replace("{base_tags}", base_tags).replace(
             "{bot_reply}", bot_reply[:500]
         )
-        # 注入标签历史上下文，使画面风格连贯（越旧权重越低，按会话隔离）
-        history_size = getattr(self.settings, "novelai_tag_history_size", 0)
-        max_weight = getattr(self.settings, "novelai_history_weight", 0.8)
-        session_history = self._get_session_history(session_id) if session_id else None
-        if history_size > 0 and session_history:
-            recent = list(session_history)[-history_size:]
-            n = len(recent)
-            min_weight = 0.3
-            history_lines = []
-            for i, t in enumerate(recent):
-                weight = round(min_weight + (max_weight - min_weight) * (i / max(n - 1, 1)), 2) if n > 1 else round(max_weight * 0.6, 2)
-                history_lines.append(f"  [{i+1}] (weight {weight}): {t}")
-            prompt += (
-                f"\n\nRecent generated tags (for gradual visual continuity, NOT for copying). "
-                f"Weights indicate how much to reference — {max_weight} = light hint, {min_weight} = barely consider:\n"
-                + "\n".join(history_lines) + "\n"
-            )
         is_r18 = self.settings.novelai_r18
         # R18 模式：追加 NSFW 标签生成指令（含 NEGATIVE 行输出格式）
         if is_r18:
             prompt += R18_TAG_ADDON
-        elif getattr(self.settings, "novelai_safe_mode", True):
+        elif self.settings.novelai_safe_mode:
             # 安全模式：强制 SFW 约束，防止 LLM 生成擦边标签
             prompt += SFW_TAG_ADDON
         # 安全模式关闭且非 R18：LLM 自由生成，不追加任何约束
@@ -470,13 +517,6 @@ class NovelAIGenerator:
             if result:
                 logger.debug(f"[MemeMemPlus-NAI] LLM 原始输出:\n{result}")
                 positive, negative = self._parse_tag_result(result, is_r18)
-                # 缓存正向标签供后续生图参考（仅在标签历史功能开启时，按会话隔离）
-                sh = self._get_session_history(session_id) if session_id else None
-                logger.debug(f"[MemeMemPlus-NAI] 标签解析结果: positive={bool(positive)}, history_size={history_size}, 当前历史={len(sh) if sh else 0}")
-                if positive and history_size > 0 and sh is not None:
-                    sh.append(positive)
-                    self._save_session_cache(session_id)
-                    logger.debug(f"[MemeMemPlus-NAI] 标签已入栈, 历史数={len(sh)}")
                 return positive, negative
         except Exception:
             logger.error(f"[MemeMemPlus-NAI] 标签补全异常: {traceback.format_exc()}")

@@ -158,6 +158,10 @@ class MoodMemePlugin(Star):
 
         # NovelAI 模式：开启时走独立流程，跳过心情表情
         if self.settings.novelai_enabled:
+            # 无论是否触发生图，都记录对话消息（穿搭情景适配需要完整历史）
+            self.novelai_gen.record_message(
+                session_id, event.message_str, response.completion_text
+            )
             if not self.novelai_cooldown.can_trigger(session_id, group_id):
                 logger.info(f"[MemeMemPlus-NAI] 冷却中，跳过 (session={session_id})")
                 return
@@ -257,12 +261,18 @@ class MoodMemePlugin(Star):
         """NovelAI 后台任务：LLM 补全标签 → NAI API 生图 → 发送。"""
         try:
             logger.info("[MemeMemPlus-NAI] 开始生图流程")
-            image_bytes, save_path = await self.novelai_gen.run(text, session_id=session_id)
+            image_bytes, save_path = await self.novelai_gen.run(
+                text, session_id=session_id
+            )
             if not image_bytes:
                 logger.warning("[MemeMemPlus-NAI] 生图失败")
                 return
 
-            await self._send_image(event, image_bytes, sticker=self.settings.novelai_sticker_mode)
+            sent_msg_id = await self._send_image(event, image_bytes, sticker=self.settings.novelai_sticker_mode)
+            if save_path:
+                self._last_sent[event.unified_msg_origin] = (Path(save_path), sent_msg_id)
+                while len(self._last_sent) > self._MAX_LAST_SENT:
+                    self._last_sent.popitem(last=False)
             logger.info(f"[MemeMemPlus-NAI] 生图完成并发送, saved={save_path}")
 
         except Exception:
@@ -396,24 +406,24 @@ class MoodMemePlugin(Star):
 
     @filter.command("心情表情刷新")
     async def refresh_library(self, event: AstrMessageEvent):
-        """重新扫描图库目录，同步已删除图片的黑名单，清空 NAI 标签缓存。"""
+        """重新扫描图库目录，同步已删除图片的黑名单，清空 NAI 缓存。"""
         self.library_mgr.refresh()
         self.auto_updater.reload_seen_ids()
-        self.novelai_gen.clear_tag_caches()
+        self.novelai_gen.clear_caches()
         stats = self.library_mgr.get_stats()
         total = sum(stats.values())
         blocked = self.auto_updater.seen_ids_count
         yield event.plain_result(
             f"图库已刷新: {len(stats)} 个心情, 共 {total} 张参考图\n"
             f"已记录 {blocked} 个 booru ID（含回收站）\n"
-            f"NAI 标签缓存已清空"
+            f"NAI 缓存已清空"
         )
 
     @filter.command("ni重置")
     async def reset_nai_caches(self, event: AstrMessageEvent):
-        """清空 NovelAI 标签历史和穿搭缓存。可在 /reset 后手动执行。"""
-        self.novelai_gen.clear_tag_caches()
-        yield event.plain_result("NAI 标签历史和穿搭缓存已清空")
+        """清空 NovelAI 对话历史和穿搭缓存。"""
+        self.novelai_gen.clear_caches()
+        yield event.plain_result("NAI 对话历史和穿搭缓存已清空")
 
     @filter.command("穿搭")
     async def toggle_outfit(self, event: AstrMessageEvent, flag: str = ""):
@@ -431,11 +441,14 @@ class MoodMemePlugin(Star):
         else:
             status = "开启" if self.settings.novelai_use_outfit else "关闭"
             outfit_tags = self.novelai_gen._cached_outfit_tags or "无"
-            # 汇总所有会话的标签历史
-            all_history = self.novelai_gen._tag_history
-            total_entries = sum(len(q) for q in all_history.values())
+            # 汇总所有会话的对话历史
+            all_history = self.novelai_gen._msg_history
+            total_msgs = sum(len(q) for q in all_history.values())
             num_sessions = len(all_history)
-            history_str = f"{total_entries} 条 ({num_sessions} 个会话)" if total_entries else "空"
+            history_str = f"{total_msgs} 条 ({num_sessions} 个会话)" if total_msgs else "空"
+            # 上次适配输出的 tags
+            last_adapted = self.novelai_gen._last_adapted_tags
+            adapted_count = len(last_adapted)
             # 诊断：检查 life_scheduler 连接状态
             gen = self.novelai_gen
             raw_outfit = gen._get_raw_outfit()
@@ -443,24 +456,21 @@ class MoodMemePlugin(Star):
             enabled = self.settings.enabled
             nai_on = self.settings.novelai_enabled
             llm_on = self.settings.novelai_llm_enabled
+            adapt_on = self.settings.novelai_outfit_adapt
             lines = [
                 f"插件总开关: {'开启' if enabled else '关闭（自动生图被禁用！）'}",
                 f"NovelAI 模式: {'开启' if nai_on else '关闭'}",
-                f"LLM 标签补全: {'开启' if llm_on else '关闭（标签历史/穿搭需要 LLM 补全开启）'}",
+                f"LLM 标签补全: {'开启' if llm_on else '关闭（穿搭需要 LLM 补全开启）'}",
                 f"穿搭注入: {status}",
                 f"穿搭 tags: {outfit_tags}",
-                f"标签历史: {history_str} (参考最近 {self.settings.novelai_tag_history_size} 条)",
+                f"穿搭情景适配: {'开启' if adapt_on else '关闭'} (参考最近 {self.settings.novelai_outfit_history} 条对话)",
+                f"上次适配输出: {list(last_adapted.values())[0][:80] if adapted_count == 1 else f'{adapted_count} 个会话有记录' if adapted_count else '无'}",
+                f"对话历史: {history_str}",
                 f"--- 诊断 ---",
                 f"life_scheduler: {'已找到' if plugin_found else '未找到'}",
                 f"穿搭原文: {raw_outfit or '无'}",
                 f"概率: {self.settings.novelai_probability}% | 冷却: {self.settings.novelai_cooldown_seconds}s",
             ]
-            if total_entries:
-                lines.append("--- 最近标签（所有会话） ---")
-                for sid, q in all_history.items():
-                    if q:
-                        last = list(q)[-1]
-                        lines.append(f"  {sid[:20]}: {last[:50]}{'...' if len(last) > 50 else ''}")
             yield event.plain_result("\n".join(lines))
 
     @filter.command("自动搜图开启")
@@ -493,15 +503,15 @@ class MoodMemePlugin(Star):
         yield event.plain_result("开始搜图，请稍候...")
 
         async def _do_update():
-            result = await self.auto_updater._run_once()
             try:
+                result = await self.auto_updater._run_once()
                 msg = _format_search_result(result, prefix="自动搜图")
                 await self.context.send_message(
                     event.unified_msg_origin,
                     MessageChain().message(msg),
                 )
             except Exception:
-                logger.error(f"[MemeMemPlus] 发送搜图结果失败: {traceback.format_exc()}")
+                logger.error(f"[MemeMemPlus] 自动搜图后台任务异常: {traceback.format_exc()}")
 
         self._launch_bg_task(_do_update())
 
@@ -520,15 +530,15 @@ class MoodMemePlugin(Star):
         yield event.plain_result(f"开始搜索 {count} 张图片...\n{info}")
 
         async def _do_search():
-            result = await self.auto_updater._run_once(limit_override=count)
             try:
+                result = await self.auto_updater._run_once(limit_override=count)
                 msg = _format_search_result(result)
                 await self.context.send_message(
                     event.unified_msg_origin,
                     MessageChain().message(msg),
                 )
             except Exception:
-                logger.error(f"[MemeMemPlus] 发送搜图结果失败: {traceback.format_exc()}")
+                logger.error(f"[MemeMemPlus] 手动搜图后台任务异常: {traceback.format_exc()}")
 
         self._launch_bg_task(_do_search())
 
@@ -567,18 +577,25 @@ class MoodMemePlugin(Star):
         yield event.plain_result(f"NovelAI 直接生图中...{'(小图模式)' if use_sticker else ''}")
 
         async def _do_ni():
-            image_bytes, save_path = await self.novelai_gen.run_direct(tags, model_override=model_override)
-            if not image_bytes:
-                try:
-                    await self.context.send_message(
-                        event.unified_msg_origin,
-                        MessageChain().message("NovelAI 生图失败"),
-                    )
-                except Exception:
-                    pass
-                return
-            await self._send_image(event, image_bytes, sticker=use_sticker)
-            logger.info(f"[MemeMemPlus-NAI] /ni 生图完成, saved={save_path}")
+            try:
+                image_bytes, save_path = await self.novelai_gen.run_direct(tags, model_override=model_override)
+                if not image_bytes:
+                    try:
+                        await self.context.send_message(
+                            event.unified_msg_origin,
+                            MessageChain().message("NovelAI 生图失败"),
+                        )
+                    except Exception:
+                        pass
+                    return
+                sent_msg_id = await self._send_image(event, image_bytes, sticker=use_sticker)
+                if save_path:
+                    self._last_sent[event.unified_msg_origin] = (Path(save_path), sent_msg_id)
+                    while len(self._last_sent) > self._MAX_LAST_SENT:
+                        self._last_sent.popitem(last=False)
+                logger.info(f"[MemeMemPlus-NAI] /ni 生图完成, saved={save_path}")
+            except Exception:
+                logger.error(f"[MemeMemPlus-NAI] /ni 后台任务异常: {traceback.format_exc()}")
 
         self._launch_bg_task(_do_ni())
 
@@ -657,8 +674,10 @@ class MoodMemePlugin(Star):
             logger.warning(f"[MemeMemPlus] 撤回消息失败 (msg_id={msg_id}): {traceback.format_exc()}")
         return False
 
-    def _find_image_in_chain(self, chain: list) -> "Image | None":
+    def _find_image_in_chain(self, chain: list | None) -> "Image | None":
         """从消息链中找到第一个 Image 组件。"""
+        if not chain:
+            return None
         for comp in chain:
             if isinstance(comp, Image):
                 return comp

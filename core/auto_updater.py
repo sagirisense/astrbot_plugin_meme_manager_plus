@@ -232,6 +232,9 @@ class AutoUpdater:
                 # 分类
                 url = _post_url(post['id'])
                 mood = await self._classify_mood(image_bytes, available_moods, post_url=url)
+                if mood == "__api_error__":
+                    # API 失败，不加入 seen_ids，下次可重试
+                    return ("__no_mood__", post, image_bytes)
                 if not mood:
                     self._seen_ids.add(post["id"])
                     return ("__no_mood__", post, image_bytes)
@@ -320,7 +323,7 @@ class AutoUpdater:
             if pid in self._seen_ids:
                 skipped_seen += 1
                 continue
-            if item.get("score", 0) < min_score:
+            if (item.get("score") or 0) < min_score:
                 skipped_score += 1
                 continue
             # Pixiv R18 过滤
@@ -386,7 +389,7 @@ class AutoUpdater:
                         raw.append({
                             "id": post_id,
                             "url": url,
-                            "score": post.get("score", 0),
+                            "score": post.get("score") or 0,
                         })
 
                     # 够了就不翻页 — 预估可用数需排除已见和低分
@@ -474,7 +477,7 @@ class AutoUpdater:
                 raw.append({
                     "id": pid,
                     "url": url,
-                    "score": illust.get("total_bookmarks", 0),
+                    "score": illust.get("total_bookmarks") or 0,
                     "r18": illust.get("x_restrict", 0) > 0,
                 })
 
@@ -619,7 +622,7 @@ class AutoUpdater:
             return self._match_mood(result, available_moods, post_url=post_url)
         except Exception as e:
             logger.error(f"[MemeMemPlus] 自动更新分类失败: {type(e).__name__}: {e}")
-            return None
+            return "__api_error__"  # 区分 API 失败和 LLM 明确返回无法分类
 
     @staticmethod
     def _match_mood(text: str, available_moods: list[str], post_url: str = "") -> str | None:
