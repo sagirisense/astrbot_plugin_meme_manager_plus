@@ -102,7 +102,8 @@ class LibraryManager:
                 try:
                     h = hashlib.md5(img_path.read_bytes()).hexdigest()
                     self._hash_index[h] = img_path
-                except Exception:
+                except Exception as e:
+                    logger.debug(f"[MemeMemPlus] 哈希计算失败，跳过: {img_path.name}: {e}")
                     continue
         self._hash_index_built = True
         logger.info(f"[MemeMemPlus] 哈希索引已构建: {len(self._hash_index)} 张图片")

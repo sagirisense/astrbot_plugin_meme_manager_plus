@@ -112,13 +112,13 @@
         "description": "生图提示词模板",
         "type": "string",
         "hint": "{mood} 替换为心情",
-        "default": "Generate a high-quality expressive emoji/sticker reaction image. The character should clearly convey the emotion: {mood}. Style: detailed, clean lines, vibrant colors, suitable for chat sticker. Square format, white or transparent background. Ensure high detail on facial features."
+        "default": "生成无职转生中艾莉丝图片，人物心情改为{mood}"
       },
       "reference_prompt_addon": {
         "description": "有参考图时的附加提示词",
         "type": "string",
         "hint": "当有参考图时追加的提示词",
-        "default": "CRITICAL: Study ALL provided reference images carefully. The generated image MUST depict THE EXACT SAME CHARACTER with identical facial features, hairstyle, art style. Only change the expression to match the mood."
+        "default": "参考图中图片生成，要求面部特征高度一致，不要为了心情修改太多人物特征"
       },
       "sticker_mode": {
         "description": "表情包模式",
@@ -173,7 +173,7 @@
       "auto_update_search_tags": {
         "description": "搜索标签",
         "type": "string",
-        "default": "eris_greyrat solo",
+        "default": "エリス・ボレアス・グレイラット",
         "hint": "Booru 搜索标签，空格分隔。注意不同站标签不同：danbooru 用 eris_greyrat，yande.re 用 eris_boreas_greyrat"
       },
       "auto_update_images_per_cycle": {
@@ -223,7 +223,7 @@
       "auto_update_filter_prompt": {
         "description": "搜图筛选提示词",
         "type": "string",
-        "default": "",
+        "default": "角色红发",
         "hint": "搜图后由 LLM 判断是否入库的筛选条件。留空不筛选。例如：可以适度暴露，但不能不穿胸罩或内裤。满足条件输出 PASS，不满足输出 REJECT"
       }
     }
@@ -292,19 +292,19 @@
       "novelai_base_tags": {
         "description": "角色基础标签（必填）",
         "type": "string",
-        "default": "1girl, solo",
+        "default": "masterpiece, best quality, 1girl, adult eris greyrat, eris greyrat, (mushoku tensei), well-proportioned body, soft skin, detailed face, delicate skin texturing,noticeble natural breasts,defined bust silhouette, natural cleavage shadows, deep valley shadows, shadows defining depth, (complexion:1.1), noticeable under clothes",
         "hint": "角色固定标签（逗号分隔），每次生图都会带上。例如: 1girl, {{{solo}}}, {{{hatsune miku}}}, vocaloid, blue hair, twintails。{{{tag}}} 表示强调。LLM 会在此基础上补全表情/动作/场景标签"
       },
       "novelai_negative_prompt": {
         "description": "负面提示词",
         "type": "string",
-        "default": "lowres, {bad}, error, missing, extra, fewer, cropped, worst quality, bad quality, watermark, text, signature, jpeg artifacts, blurry, flat color",
+        "default": "lowres, low quality, worst quality, jpeg artifacts, blurry, text, logo, signature, watermark, error, missing fingers, extra digit, bad hands, bad anatomy, deformed limbs, poorly drawn face, disfigured, (small breasts:1.2), (flat chest:1.2), blue hair, green eyes, blonde hair, black hair, different face, 2girls, 3girls, multiple girls, group, cloned face, obese, chubby, (abs:1.2), (toned abdomen:1.2), muscular belly, muscular body, muscle definition, hard body, rigid body, defined stomach muscles,big bomb,thick legs,chubby legs,wide hips, huge ass, big ass, large ass,child, kid,immature,small build, short stature,loli,juvenile, underage,unnatural proportions",
         "hint": "不希望出现的元素（逗号分隔）。默认值已覆盖常见质量问题。R18 模式下 LLM 还会动态追加与场景矛盾的负向标签"
       },
       "novelai_custom_tags": {
         "description": "自定义追加标签（通用）",
         "type": "string",
-        "default": "",
+        "default": "solo",
         "hint": "无论是否开启 R18，这里的标签都会追加到正向标签末尾。适合填入每张图都想要的固定元素（场景、光效、画风等）。拼接顺序：基础标签 → LLM 生成 → 本项 → R18 专用"
       },
       "novelai_tag_prompt": {

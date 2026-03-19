@@ -1,4 +1,4 @@
-# astrbot_plugin_meme_manager_plus v3.7.0
+# astrbot_plugin_meme_manager_plus v3.8.3
 
 AI 心情表情管理器 — 自动分析 Bot 回复的情绪与表达欲望，双级概率独立判定，智能生成风格多变的表情图片。
 
@@ -360,8 +360,41 @@ LLM Vision 分析每张图片的表情/心情
 | `穿搭` | 查看穿搭/适配诊断信息 |
 | `穿搭 1` | 开启穿搭 tag 注入 |
 | `穿搭 0` | 关闭穿搭 tag 注入（缓存保留） |
+| `存tag <名称>` | 保存当前正负标签 + 穿搭缓存为命名预设 |
+| `应用tag <名称>` | 加载预设，替换当前标签和穿搭缓存（不重新调 LLM） |
+| `查看所有tag` | 列出所有已保存的 tag 预设 |
+| `查看tag <名称>` | 查看某个预设的详细内容 |
+| `删除tag <名称>` | 删除一个已保存的 tag 预设 |
 
 ## 更新日志
+
+### v3.8.3
+
+- **穿搭午夜回退**：`_get_raw_outfit()` 当天日程不存在时自动往前回退最多 3 天，避免过了午夜穿搭丢失（与 life_scheduler 的 `_get_latest_data` 逻辑一致）
+- **负向标签日志完善**：每次生图始终打印完整负向标签，不再仅在有 `extra_negative` 时才输出
+
+### v3.8.2
+
+- **修复 `/穿搭` 诊断并发安全**：`_last_adapted_tags` 和 `_msg_history` 在诊断输出时做 snapshot，防止后台生图任务并发修改导致 RuntimeError
+
+### v3.8.1
+
+- **应用tag 穿搭同步 life_scheduler**：`/应用tag` 现在会把穿搭原文写回 life_scheduler 的 schedule 对象，防止 `_refresh_outfit_tags` 检测到不一致而重新 LLM 转换
+- **新增 `/删除tag` 命令**：删除已保存的 tag 预设
+- **Tag 预设代码重构**：抽取 `_get_outfit_snapshot`、`_write_outfit_to_life_scheduler` 公共方法，settings key 用常量元组统一管理，消除重复代码
+- **修复预设 JSON 健壮性**：`_load_tag_preset` 增加 `settings` 字段校验；`/查看tag`、`/查看所有tag` 改用 `.get()` 防止 KeyError
+
+### v3.8.0
+
+- **Tag 预设管理**：新增 `/存tag`、`/应用tag`、`/查看所有tag`、`/查看tag` 四个命令，可保存和恢复调好的正负标签 + 穿搭缓存。恢复时直接写入穿搭缓存，不重新调 LLM 生成，适合保存"炼丹"成果
+- **默认标签同步**：`settings.py` 默认值与配置面板 schema 对齐（base_tags、negative_prompt、custom_tags）
+
+### v3.7.1
+
+- **修复 LLMClient asyncio.Lock 事件循环错误**：`_session_lock` 在模块加载时创建，插件热重载或事件循环切换时导致 `RuntimeError`。改为懒初始化，确保 Lock 在当前事件循环中创建
+- **修复自动搜图 `_seen_ids` 并发修改竞态**：多个 `_process_one` 任务并发写入 `_seen_ids` 无锁保护，可能导致数据丢失。新增 `_seen_lock` 保护所有修改操作
+- **改进 `_seen_ids` 超限策略**：超限时从磁盘重建后与内存 ID 合并，不再丢弃未持久化的临时 ID
+- **修复哈希索引异常静默吞掉**：`library_manager._build_hash_index` 中文件读取失败时无日志输出，排查困难。改为 debug 级别记录失败文件名和原因
 
 ### v3.7.0
 
@@ -512,3 +545,26 @@ LLM Vision 分析每张图片的表情/心情
 **Grok 报 413 错误？**
 - 插件已内置图片压缩（800px, JPEG q80），通常不会出现
 - 如仍出现，减少参考图尺寸
+
+## 示例标签参考
+
+NovelAI 的标签调优很像炼丹——同样的角色，标签的措辞、顺序、权重微调都会显著影响出图效果。没有万能公式，需要反复试验才能找到满意的组合。插件提供了 `/存tag` 和 `/应用tag` 命令，方便你保存和切换调好的"配方"。
+
+以下是产生文档顶部展示效果的默认标签配置（角色：艾莉丝·格雷拉特，无职转生），新用户拉取插件后配置面板会自动填入这些值：
+
+**正向基础标签 (novelai_base_tags)**：
+```
+masterpiece, best quality, 1girl, adult eris greyrat, eris greyrat, (mushoku tensei), well-proportioned body, soft skin, detailed face, delicate skin texturing,noticeble natural breasts,defined bust silhouette, natural cleavage shadows, deep valley shadows, shadows defining depth, (complexion:1.1), noticeable under clothes
+```
+
+**自定义追加标签 (novelai_custom_tags)**：
+```
+solo
+```
+
+**负向标签 (novelai_negative_prompt)**：
+```
+lowres, low quality, worst quality, jpeg artifacts, blurry, text, logo, signature, watermark, error, missing fingers, extra digit, bad hands, bad anatomy, deformed limbs, poorly drawn face, disfigured, (small breasts:1.2), (flat chest:1.2), blue hair, green eyes, blonde hair, black hair, different face, 2girls, 3girls, multiple girls, group, cloned face, obese, chubby, (abs:1.2), (toned abdomen:1.2), muscular belly, muscular body, muscle definition, hard body, rigid body, defined stomach muscles,big bomb,thick legs,chubby legs,wide hips, huge ass, big ass, large ass,child, kid,immature,small build, short stature,loli,juvenile, underage,unnatural proportions
+```
+
+> 替换角色时只需修改 `novelai_base_tags` 中的角色名和外貌特征，负向标签通常不需要改动。LLM 会根据对话内容自动补全表情、动作、场景标签，穿搭由 `life_scheduler` 注入。

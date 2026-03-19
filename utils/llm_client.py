@@ -5,26 +5,74 @@
 """
 
 import asyncio
+import base64
+import io
 
 import aiohttp
+from PIL import Image
 
 from astrbot.api import logger
 
 from .provider_helper import LLMApiConfig
 
 
+# Gemini 支持的图片 MIME 类型
+_GEMINI_SUPPORTED_MIME = {"image/jpeg", "image/png", "image/webp"}
+
+
+def _detect_mime(raw: bytes) -> str:
+    """根据文件头检测图片 MIME 类型。"""
+    if raw[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if raw[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+        return "image/webp"
+    if raw[:4] == b"GIF8":
+        return "image/gif"
+    if raw[:2] == b"BM":
+        return "image/bmp"
+    return "application/octet-stream"
+
+
+def _ensure_gemini_compatible(b64_data: str) -> tuple[str, str]:
+    """确保图片是 Gemini 支持的格式，不支持的转为 JPEG。返回 (b64, mime)。"""
+    raw = base64.b64decode(b64_data)
+    mime = _detect_mime(raw)
+    if mime in _GEMINI_SUPPORTED_MIME:
+        return b64_data, mime
+    # 不支持的格式（GIF/BMP 等）→ 转 JPEG
+    try:
+        img = Image.open(io.BytesIO(raw))
+        if img.mode in ("RGBA", "P", "LA"):
+            img = img.convert("RGB")
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=90)
+        return base64.b64encode(buf.getvalue()).decode(), "image/jpeg"
+    except Exception:
+        # 转换失败，原样返回让 API 报错
+        return b64_data, "image/jpeg"
+
+
 class LLMClient:
     """LLM 文本/Vision 通用调用，自动分发 Gemini / OpenAI。"""
 
     _session: aiohttp.ClientSession | None = None
-    _session_lock: asyncio.Lock = asyncio.Lock()
+    _session_lock: asyncio.Lock | None = None
+
+    @classmethod
+    def _get_lock(cls) -> asyncio.Lock:
+        """懒初始化 asyncio.Lock，确保在当前事件循环中创建。"""
+        if cls._session_lock is None:
+            cls._session_lock = asyncio.Lock()
+        return cls._session_lock
 
     @classmethod
     async def get_session(cls) -> aiohttp.ClientSession:
         """获取或创建共享的 ClientSession（线程安全）。"""
         if cls._session and not cls._session.closed:
             return cls._session
-        async with cls._session_lock:
+        async with cls._get_lock():
             # 双重检查：拿到锁后再看一次
             if cls._session is None or cls._session.closed:
                 cls._session = aiohttp.ClientSession()
@@ -33,10 +81,11 @@ class LLMClient:
     @classmethod
     async def close(cls) -> None:
         """关闭共享 session（插件卸载时调用）。"""
-        async with cls._session_lock:
+        async with cls._get_lock():
             if cls._session and not cls._session.closed:
                 await cls._session.close()
             cls._session = None
+        cls._session_lock = None
 
     # ── URL 构建 ──────────────────────────────────────────
 
@@ -102,7 +151,8 @@ class LLMClient:
 
         parts: list[dict] = []
         if b64_image:
-            parts.append({"inlineData": {"mimeType": "image/jpeg", "data": b64_image}})
+            b64_safe, mime = _ensure_gemini_compatible(b64_image)
+            parts.append({"inlineData": {"mimeType": mime, "data": b64_safe}})
         parts.append({"text": prompt})
 
         payload: dict = {

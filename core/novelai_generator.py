@@ -159,8 +159,15 @@ class NovelAIGenerator:
             data_mgr = getattr(self._life_plugin, "data_mgr", None)
             if not data_mgr:
                 return None
-            schedule = data_mgr.get(_dt.datetime.now())
-            if not schedule or getattr(schedule, "status", "") == "failed":
+            # 当天日程不存在时，往前回退最多 3 天（与 life_scheduler 逻辑一致）
+            now = _dt.datetime.now()
+            schedule = None
+            for offset in range(4):
+                s = data_mgr.get(now - _dt.timedelta(days=offset))
+                if s and getattr(s, "status", "") != "failed":
+                    schedule = s
+                    break
+            if not schedule:
                 return None
             outfit = getattr(schedule, "outfit", "") or ""
             outfit_style = getattr(schedule, "outfit_style", "") or ""
@@ -517,9 +524,10 @@ class NovelAIGenerator:
             extra_negative = f"{extra_negative}, {outfit_negative}" if extra_negative else outfit_negative
 
         logger.info(f"[MemeMemPlus-NAI] 最终正向标签: {full_tags}")
+        final_negative = self.settings.novelai_negative_prompt
         if extra_negative:
-            logger.info(
-                f"[MemeMemPlus-NAI] 最终负向标签: {self.settings.novelai_negative_prompt}, {extra_negative}")
+            final_negative = f"{final_negative}, {extra_negative}" if final_negative else extra_negative
+        logger.info(f"[MemeMemPlus-NAI] 最终负向标签: {final_negative}")
 
         # 2. 调用 NovelAI API（extra_negative 会追加到配置的负向标签后面）
         image_bytes = await self._call_nai_api(full_tags, extra_negative=extra_negative)

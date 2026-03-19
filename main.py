@@ -1,7 +1,9 @@
 import asyncio
 import collections
+import datetime
 import hashlib
 import io
+import json
 import random
 import shutil
 import traceback
@@ -105,6 +107,10 @@ class MoodMemePlugin(Star):
         self.novelai_cooldown = CooldownManager(
             self.settings.novelai_cooldown_seconds, self.settings.per_group
         )
+
+        # Tag 预设存储目录
+        self._tag_preset_dir = self.plugin_dir / "novelai" / "tag_presets"
+        self._tag_preset_dir.mkdir(parents=True, exist_ok=True)
 
         # 记录每个会话最近发送的图片路径和消息ID，用于 /删图
         # 格式: {unified_msg_origin: (file_path, message_id_or_None)}
@@ -447,12 +453,12 @@ class MoodMemePlugin(Star):
             status = "开启" if self.settings.novelai_use_outfit else "关闭"
             outfit_tags = self.novelai_gen._cached_outfit_tags or "无"
             # 汇总所有会话的对话历史
-            all_history = self.novelai_gen._msg_history
+            all_history = dict(self.novelai_gen._msg_history)  # snapshot
             total_msgs = sum(len(q) for q in all_history.values())
             num_sessions = len(all_history)
             history_str = f"{total_msgs} 条 ({num_sessions} 个会话)" if total_msgs else "空"
             # 上次适配输出的 tags
-            last_adapted = self.novelai_gen._last_adapted_tags
+            last_adapted = dict(self.novelai_gen._last_adapted_tags)  # snapshot 防止并发修改
             adapted_count = len(last_adapted)
             # 诊断：检查 life_scheduler 连接状态
             gen = self.novelai_gen
@@ -665,6 +671,199 @@ class MoodMemePlugin(Star):
         logger.info(f"[MemeMemPlus] 已删图: {target_path.name} (mood={mood}) → trash/, 撤回={'成功' if recalled else '跳过'}")
         recall_text = "，已撤回消息" if recalled else ""
         yield event.plain_result(f"已删除: {target_path.name}\n来源心情: {mood}\n已移入回收站{recall_text}。")
+
+    # ── Tag 预设管理 ─────────────────────────────────────────
+
+    _TAG_SETTING_KEYS = (
+        "novelai_base_tags", "novelai_negative_prompt", "novelai_custom_tags",
+        "novelai_r18_custom_tags", "novelai_r18_nude_tags", "novelai_r18_nude_negative",
+    )
+
+    def _get_outfit_snapshot(self) -> tuple[str, str]:
+        """返回 (穿搭原文, 穿搭tags)，优先用缓存，缓存为空则主动拉取原文。"""
+        text = self.novelai_gen._cached_outfit_text
+        tags = self.novelai_gen._cached_outfit_tags
+        if not text:
+            text = self.novelai_gen._get_raw_outfit() or ""
+        return text, tags
+
+    def _write_outfit_to_life_scheduler(self, outfit_text: str) -> bool:
+        """把穿搭原文写回 life_scheduler 的 schedule 对象，返回是否成功。"""
+        if not outfit_text:
+            return False
+        gen = self.novelai_gen
+        if not gen._life_plugin:
+            gen._get_raw_outfit()  # 触发插件发现
+        if not gen._life_plugin:
+            return False
+        try:
+            import datetime as _dt
+            data_mgr = getattr(gen._life_plugin, "data_mgr", None)
+            if not data_mgr:
+                return False
+            # 跨日回退：0 点后今日数据未生成时写回昨日数据
+            now = _dt.datetime.now()
+            schedule = None
+            for offset in range(4):
+                s = data_mgr.get(now - _dt.timedelta(days=offset))
+                if s and getattr(s, "status", "") != "failed":
+                    schedule = s
+                    break
+            if not schedule:
+                return False
+            schedule.outfit = outfit_text
+            schedule.outfit_style = ""
+            data_mgr.set(schedule)
+            logger.info(f"[MemeMemPlus-NAI] 穿搭已写回 life_scheduler: {outfit_text[:40]}")
+            return True
+        except Exception as e:
+            logger.debug(f"[MemeMemPlus-NAI] 写回穿搭到 life_scheduler 失败: {e}")
+            return False
+
+    def _save_tag_preset(self, name: str) -> Path:
+        """保存当前 tag 设置 + 穿搭缓存为 JSON 预设。"""
+        outfit_text, outfit_tags = self._get_outfit_snapshot()
+        data = {
+            "name": name,
+            "created_at": datetime.datetime.now().isoformat(timespec="seconds"),
+            "settings": {k: getattr(self.settings, k) for k in self._TAG_SETTING_KEYS},
+            "outfit_cache": {
+                "cached_outfit_text": outfit_text,
+                "cached_outfit_tags": outfit_tags,
+            },
+        }
+        path = self._tag_preset_dir / f"{name}.json"
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        return path
+
+    def _load_tag_preset(self, name: str) -> dict | None:
+        """按名称加载预设 JSON，不存在或解析失败返回 None。"""
+        path = self._tag_preset_dir / f"{name}.json"
+        if not path.exists():
+            return None
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if "settings" not in data:
+                return None
+            return data
+        except (json.JSONDecodeError, OSError):
+            return None
+
+    @filter.command("存tag")
+    async def save_tag_preset(self, event: AstrMessageEvent, name: str = ""):
+        """保存当前 NovelAI 正负标签 + 穿搭缓存为命名预设。"""
+        name = name.strip()
+        if not name:
+            yield event.plain_result("用法: /存tag <预设名称>")
+            return
+        if "/" in name or "\\" in name or ".." in name:
+            yield event.plain_result("预设名称不能包含路径字符")
+            return
+        existed = (self._tag_preset_dir / f"{name}.json").exists()
+        self._save_tag_preset(name)
+        action = "覆盖" if existed else "保存"
+        outfit_text, outfit_tags = self._get_outfit_snapshot()
+        lines = [
+            f"Tag 预设已{action}: {name}",
+            f"正向: {self.settings.novelai_base_tags[:60]}...",
+            f"穿搭原文: {outfit_text[:60] + '...' if outfit_text else '无'}",
+            f"穿搭标签: {outfit_tags[:60] + '...' if outfit_tags else '无'}",
+        ]
+        yield event.plain_result("\n".join(lines))
+
+    @filter.command("应用tag")
+    async def apply_tag_preset(self, event: AstrMessageEvent, name: str = ""):
+        """加载已保存的 tag 预设，替换当前设置和穿搭缓存。"""
+        name = name.strip()
+        if not name:
+            yield event.plain_result("用法: /应用tag <预设名称>")
+            return
+        data = self._load_tag_preset(name)
+        if not data:
+            yield event.plain_result(f"未找到预设: {name}")
+            return
+        saved = data["settings"]
+        for k in self._TAG_SETTING_KEYS:
+            if k in saved:
+                setattr(self.settings, k, saved[k])
+        oc = data.get("outfit_cache", {})
+        cached_text = oc.get("cached_outfit_text", "")
+        self.novelai_gen._cached_outfit_text = cached_text
+        self.novelai_gen._cached_outfit_tags = oc.get("cached_outfit_tags", "")
+        self.novelai_gen._last_adapted_tags.clear()
+        self.novelai_gen._msg_history.clear()
+        # 写回 life_scheduler，使 _get_raw_outfit() 返回值与缓存一致
+        life_ok = self._write_outfit_to_life_scheduler(cached_text)
+        lines = [
+            f"已应用预设: {name}",
+            f"正向: {self.settings.novelai_base_tags[:60]}...",
+            f"穿搭原文: {cached_text[:60] + '...' if cached_text else '无'}",
+            f"穿搭标签: {self.novelai_gen._cached_outfit_tags[:60] + '...' if self.novelai_gen._cached_outfit_tags else '无'}",
+        ]
+        if life_ok:
+            lines.append("穿搭已同步到 life_scheduler")
+        elif cached_text:
+            lines.append("穿搭同步到 life_scheduler 失败（插件未找到）")
+        yield event.plain_result("\n".join(lines))
+
+    @filter.command("查看所有tag")
+    async def list_tag_presets(self, event: AstrMessageEvent):
+        """列出所有已保存的 tag 预设。"""
+        files = sorted(self._tag_preset_dir.glob("*.json"))
+        if not files:
+            yield event.plain_result("暂无保存的 tag 预设")
+            return
+        lines = [f"=== Tag 预设列表 ({len(files)} 个) ==="]
+        for f in files:
+            try:
+                d = json.loads(f.read_text(encoding="utf-8"))
+                base = d.get("settings", {}).get("novelai_base_tags", "")[:40]
+                has_outfit = "有" if d.get("outfit_cache", {}).get("cached_outfit_tags") else "无"
+                lines.append(f"  {f.stem} — {base}... (穿搭:{has_outfit})")
+            except Exception:
+                lines.append(f"  {f.stem} — (读取失败)")
+        yield event.plain_result("\n".join(lines))
+
+    @filter.command("查看tag")
+    async def view_tag_preset(self, event: AstrMessageEvent, name: str = ""):
+        """查看某个 tag 预设的详细内容。"""
+        name = name.strip()
+        if not name:
+            yield event.plain_result("用法: /查看tag <预设名称>")
+            return
+        data = self._load_tag_preset(name)
+        if not data:
+            yield event.plain_result(f"未找到预设: {name}")
+            return
+        s = data["settings"]
+        oc = data.get("outfit_cache", {})
+        lines = [
+            f"=== 预设: {data.get('name', name)} ===",
+            f"创建时间: {data.get('created_at', '未知')}",
+            f"正向标签: {s.get('novelai_base_tags', '')}",
+            f"负向标签: {s.get('novelai_negative_prompt', '')[:80]}...",
+            f"自定义标签: {s.get('novelai_custom_tags') or '无'}",
+            f"R18 自定义: {s.get('novelai_r18_custom_tags') or '无'}",
+            f"R18 裸体正向: {s.get('novelai_r18_nude_tags', '')[:60]}...",
+            f"R18 裸体负向: {s.get('novelai_r18_nude_negative', '')[:60]}...",
+            f"穿搭原文: {oc.get('cached_outfit_text') or '无'}",
+            f"穿搭标签: {oc.get('cached_outfit_tags') or '无'}",
+        ]
+        yield event.plain_result("\n".join(lines))
+
+    @filter.command("删除tag")
+    async def delete_tag_preset(self, event: AstrMessageEvent, name: str = ""):
+        """删除一个已保存的 tag 预设。"""
+        name = name.strip()
+        if not name:
+            yield event.plain_result("用法: /删除tag <预设名称>")
+            return
+        path = self._tag_preset_dir / f"{name}.json"
+        if not path.exists():
+            yield event.plain_result(f"未找到预设: {name}")
+            return
+        path.unlink()
+        yield event.plain_result(f"已删除预设: {name}")
 
     async def _try_recall(self, event: AstrMessageEvent, msg_id: str | int | None) -> bool:
         """尝试撤回消息，成功返回 True。"""

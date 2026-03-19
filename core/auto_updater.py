@@ -49,6 +49,7 @@ class AutoUpdater:
         self._task: asyncio.Task | None = None
         self._stop_event = asyncio.Event()
         self._lock = asyncio.Lock()  # 防止并发搜图
+        self._seen_lock = asyncio.Lock()  # 保护 _seen_ids 并发修改
         self._MAX_SEEN_IDS = 10000  # 防止内存泄漏
         # 从磁盘已有文件恢复已下载 ID，避免重复搜索
         self._seen_ids: set[str] = self._load_seen_ids()
@@ -226,7 +227,8 @@ class AutoUpdater:
                 # 筛选
                 if self.settings.auto_update_filter_prompt:
                     if not await self._filter_image(image_bytes):
-                        self._seen_ids.add(post["id"])
+                        async with self._seen_lock:
+                            self._seen_ids.add(post["id"])
                         logger.info(f"[MemeMemPlus] 自动更新: 图片被筛选拒绝 → {_post_url(post['id'])}")
                         return ("__filtered__", post, image_bytes)
                 # 分类
@@ -236,7 +238,8 @@ class AutoUpdater:
                     # API 失败，不加入 seen_ids，下次可重试
                     return ("__no_mood__", post, image_bytes)
                 if not mood:
-                    self._seen_ids.add(post["id"])
+                    async with self._seen_lock:
+                        self._seen_ids.add(post["id"])
                     return ("__no_mood__", post, image_bytes)
                 return (mood, post, image_bytes)
 
@@ -258,7 +261,7 @@ class AutoUpdater:
             elif mood == "__no_mood__":
                 skipped_mood += 1
             else:
-                self._save_image(mood, image_bytes, post["id"])
+                await self._save_image(mood, image_bytes, post["id"])
                 saved += 1
                 logger.info(f"[MemeMemPlus] 自动更新: 图片 → {mood} ← {_post_url(post['id'])}")
 
@@ -643,7 +646,7 @@ class AutoUpdater:
 
     # ── 保存 ──────────────────────────────────────────────────
 
-    def _save_image(self, mood: str, image_bytes: bytes, post_id: str) -> None:
+    async def _save_image(self, mood: str, image_bytes: bytes, post_id: str) -> None:
         """保存图片到心情目录，标记为 booru 来源。"""
         mood_dir = self.library_mgr.library_dir / mood
         mood_dir.mkdir(parents=True, exist_ok=True)
@@ -655,8 +658,13 @@ class AutoUpdater:
             return
 
         save_path.write_bytes(image_bytes)
-        self._seen_ids.add(post_id)
-        # 防止 _seen_ids 无限增长（超限后从磁盘重建，丢弃仅在内存中的临时 ID）
-        if len(self._seen_ids) > self._MAX_SEEN_IDS:
-            self._seen_ids = self._load_seen_ids()
+        async with self._seen_lock:
+            self._seen_ids.add(post_id)
+            # 防止 _seen_ids 无限增长：超限时从磁盘重建，但保留内存中的新 ID
+            if len(self._seen_ids) > self._MAX_SEEN_IDS:
+                disk_ids = self._load_seen_ids()
+                self._seen_ids |= disk_ids  # 合并而非替换，避免丢失未持久化的 ID
+                # 若合并后仍超限，保留最近的磁盘 ID（文件名中有 post_id，磁盘扫描天然去重）
+                if len(self._seen_ids) > self._MAX_SEEN_IDS * 2:
+                    self._seen_ids = disk_ids
         logger.debug(f"[MemeMemPlus] 自动更新: 已保存 {save_path.name} → {mood}/")

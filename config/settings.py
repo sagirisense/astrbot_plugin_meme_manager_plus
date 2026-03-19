@@ -89,8 +89,8 @@ class PluginSettings:
     novelai_enabled: bool = False
     novelai_api_key: str = ""
     novelai_model: str = "nai-diffusion-4-5-full"
-    novelai_base_tags: str = "1girl, solo"
-    novelai_negative_prompt: str = "lowres, {bad}, error, missing, extra, fewer, cropped, worst quality, bad quality, watermark, text, signature, jpeg artifacts, blurry, flat color"
+    novelai_base_tags: str = "masterpiece, best quality, 1girl, adult eris greyrat, eris greyrat, (mushoku tensei), well-proportioned body, soft skin, detailed face, delicate skin texturing,noticeble natural breasts,defined bust silhouette, natural cleavage shadows, deep valley shadows, shadows defining depth, (complexion:1.1), noticeable under clothes"
+    novelai_negative_prompt: str = "lowres, low quality, worst quality, jpeg artifacts, blurry, text, logo, signature, watermark, error, missing fingers, extra digit, bad hands, bad anatomy, deformed limbs, poorly drawn face, disfigured, (small breasts:1.2), (flat chest:1.2), blue hair, green eyes, blonde hair, black hair, different face, 2girls, 3girls, multiple girls, group, cloned face, obese, chubby, (abs:1.2), (toned abdomen:1.2), muscular belly, muscular body, muscle definition, hard body, rigid body, defined stomach muscles,big bomb,thick legs,chubby legs,wide hips, huge ass, big ass, large ass,child, kid,immature,small build, short stature,loli,juvenile, underage,unnatural proportions"
     novelai_probability: int = 30
     novelai_width: int = 832
     novelai_height: int = 1216
@@ -101,7 +101,7 @@ class PluginSettings:
     novelai_r18: bool = False  # R18 模式：LLM 额外生成衣着/身体/行为标签
     novelai_safe_mode: bool = True  # 安全模式：非 R18 时强制 SFW 约束
     novelai_use_outfit: bool = False  # 从 life_scheduler 获取今日穿搭注入标签
-    novelai_custom_tags: str = ""  # 用户自定义标签，直接追加到最终正向标签末尾
+    novelai_custom_tags: str = "solo"  # 用户自定义标签，直接追加到最终正向标签末尾
     novelai_r18_custom_tags: str = ""  # R18 模式专用自定义标签
     novelai_r18_nude_tags: str = "completely nude, detailed areola, visible nipples, erect nipples, arms at sides"
     novelai_r18_nude_negative: str = "covered nipples, hand covering breasts, arms covering body, censored"
