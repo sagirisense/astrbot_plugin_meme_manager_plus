@@ -15,6 +15,9 @@ build/
 *.webp
 *.bmp
 
+# 保留 README 示例图片
+!docs/examples/*.jpg
+
 # 运行时目录
 novelai/
 trash/
