@@ -61,6 +61,18 @@ git clone https://github.com/Sloan-YXT/astrbot_plugin_meme_manager_plus
 
 重启 AstrBot，依赖会自动安装。
 
+### 可选依赖
+
+| 插件 | 用途 | 是否必须 |
+|------|------|----------|
+| `astrbot_plugin_life_scheduler` | 提供每日穿搭数据，供 NovelAI 穿搭 tag 注入和情景适配使用 | 否 |
+
+穿搭相关功能（`novelai_use_outfit`、`novelai_outfit_adapt`）依赖 `life_scheduler` 插件提供穿搭描述。未安装时这些功能自动跳过，不影响其他功能。`life_scheduler` 的 `/改穿搭` 命令可实时修改穿搭，本插件会自动检测变化并重新生成 tag。
+
+### 与 meme_manager 的关系
+
+本插件的心情表情模式（情绪分析 + 大模型生图 + Booru/Pixiv 爬图入库）借鉴了 [astrbot_plugin_meme_manager](https://github.com/zouyonghe/astrbot_plugin_meme_manager) 的设计思路，在此基础上增加了双级概率、先发后生、Grok 引擎等改进。NovelAI 角色扮演生图模式则是本插件的原创功能，通过 LLM 标签补全 + 穿搭注入 + 情景适配实现连贯的角色插画生成。两个插件可以共存，互不影响。
+
 ## 快速开始
 
 插件有两种工作模式，任选其一：
@@ -500,6 +512,3 @@ LLM Vision 分析每张图片的表情/心情
 **Grok 报 413 错误？**
 - 插件已内置图片压缩（800px, JPEG q80），通常不会出现
 - 如仍出现，减少参考图尺寸
-
-**可以和 meme_manager 共存吗？**
-- 可以，两个插件独立运行，互不影响
