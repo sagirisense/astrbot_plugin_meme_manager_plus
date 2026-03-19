@@ -220,13 +220,18 @@ class MoodMemePlugin(Star):
                 logger.info(f"[MemeMemPlus] {mood} 目录为空，不发送")
             else:
                 picked = random.choice(all_images)
-                image_bytes = picked.read_bytes()
-                logger.info(f"[MemeMemPlus] 随机抽取: {picked.name}, mood={mood}")
-                sent_msg_id = await self._send_image(event, image_bytes)
-                self._last_sent[event.unified_msg_origin] = (picked, sent_msg_id)
-                # 防止 _last_sent 无限增长
-                while len(self._last_sent) > self._MAX_LAST_SENT:
-                    self._last_sent.popitem(last=False)
+                try:
+                    image_bytes = picked.read_bytes()
+                except OSError:
+                    logger.warning(f"[MemeMemPlus] 抽取的图片读取失败（可能已被删除）: {picked.name}")
+                    image_bytes = None
+                if image_bytes:
+                    logger.info(f"[MemeMemPlus] 随机抽取: {picked.name}, mood={mood}")
+                    sent_msg_id = await self._send_image(event, image_bytes)
+                    self._last_sent[event.unified_msg_origin] = (picked, sent_msg_id)
+                    # 防止 _last_sent 无限增长
+                    while len(self._last_sent) > self._MAX_LAST_SENT:
+                        self._last_sent.popitem(last=False)
 
             # 第二级：LLM 生图概率（独立判定，发送后再生图入库）
             if not (

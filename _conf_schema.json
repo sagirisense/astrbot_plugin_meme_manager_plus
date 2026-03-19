@@ -355,6 +355,18 @@
         "default": "",
         "hint": "仅在 R18 模式开启时追加到正向标签末尾，关闭 R18 时不生效。适合填入每次 R18 生图都想要的固定 NSFW 标签。例如: completely_nude, huge_breasts。会与上面的「通用追加标签」叠加"
       },
+      "novelai_r18_nude_tags": {
+        "description": "R18 全裸正向标签",
+        "type": "string",
+        "default": "completely nude, detailed areola, visible nipples, erect nipples, arms at sides",
+        "hint": "穿搭全为「无」且开启 R18 时自动注入的正向标签。穿搭系统检测到角色裸体时使用这些标签替代 LLM 转换"
+      },
+      "novelai_r18_nude_negative": {
+        "description": "R18 全裸负向标签",
+        "type": "string",
+        "default": "covered nipples, hand covering breasts, arms covering body, censored",
+        "hint": "穿搭 tags 包含裸体关键词时自动追加到负向标签。防止生图出现遮挡、审查等不需要的元素"
+      },
 
       "novelai_width": {
         "description": "图片宽度",

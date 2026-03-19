@@ -34,63 +34,63 @@ DEFAULT_TAG_PROMPT = (
     "- Pose/action (e.g. sitting, standing, looking_at_viewer, hand_on_hip)\n"
     "- Scene/background (e.g. outdoors, bedroom, classroom, night sky)\n"
     "- Other modifiers (e.g. wind, light_particles, from_above)\n\n"
+    "DO NOT generate any of the following — they are managed separately:\n"
+    "- Clothing/outfit tags (dress, shirt, skirt, jacket, uniform, etc.)\n"
+    "- Hosiery/legwear (thighhighs, stockings, socks, pantyhose, etc.)\n"
+    "- Headwear/hair accessories (hat, ribbon, hairband, bow, crown, etc.)\n"
+    "- Footwear (shoes, boots, sandals, etc.)\n"
+    "- Accessories (glasses, necklace, earrings, bag, etc.)\n\n"
     "Output ONLY comma-separated tags, no explanation, no base tags.\n"
     "Example: smile, looking_at_viewer, sitting, classroom, hand_on_chin"
 )
 
 SFW_TAG_ADDON = (
     "\n\n**ECCHI LIMIT RULES (HIGHEST PRIORITY, MUST OBEY):**\n"
-    "- Mild skin exposure is ALLOWED: bare_shoulders, off_shoulder, midriff, "
-    "bikini, swimsuit, shorts, miniskirt, cleavage, sleeveless, tank_top, "
-    "sundress, crop_top, thighhighs, etc. These are all fine.\n"
+    "- Mild skin exposure tags are ALLOWED: bare_shoulders, bare_arms, "
+    "bare_legs, midriff, cleavage, navel, etc. These are fine.\n"
+    "- Do NOT generate clothing/outfit tags — those are managed separately.\n"
     "- ABSOLUTELY FORBIDDEN (hard ban): "
     "nude, naked, topless, bottomless, no_bra, no_panties, nipples, pussy, penis, "
     "sex, cum, ahegao, spread_legs, bondage, tentacles, see-through_nipples, "
     "any genital exposure, any sexual action tags, any body fluid tags.\n"
-    "- Rule of thumb: underwear/bra must always be worn. "
-    "Showing skin is OK, showing what's under the underwear is NOT.\n"
+    "- Rule of thumb: showing skin is OK, showing what's under the underwear is NOT.\n"
     "- Even if the dialogue is suggestive, do NOT cross into explicit territory.\n"
 )
 
 R18_TAG_ADDON = (
-    "\n\n**CRITICAL RULES（最高优先级，必须严格遵守）：**\n"
-    "- 如果用户对话中出现「全裸」「completely nude」「naked」「stripped」「无衣」「裸体」「裸身」或任何类似词汇，**强制**使用 completely_nude, naked, no_clothes, no_panties, no_bra, stripped, nude, bottomless, topless，并且**绝对禁止**生成任何衣服相关 tag（包括 torn_clothes、lifted_skirt、open_shirt、bikini、panties 等全部排除）。\n"
-    "- 输出必须**极度黄暴**（very explicit & hardcore），优先使用最直接、最淫乱、最暴力的 tag，绝不使用温和描述。\n"
-    "- 如果对话中出现「丈夫」「老公」「husband」「 hubby」「夫君」或任何夫妻做爱相关描述，必须**自动提取并加入丈夫专属做爱模式 tag**（例如 sex_with_husband, husband_penetration, married_sex, creampie_from_husband, passionate_rough_sex 等），并结合具体体位和插入细节。\n\n"
-
-    "Tag categories（根据对话上下文尽可能多地使用，优先 hardcore）：\n"
-    "- Nudity（强制全裸时必须放最前面）：completely_nude, naked, no_clothes, stripped, bottomless, topless, pussy_exposed, asshole_visible, nipples_exposed\n"
-    "- Body features（加强）：huge_breasts, large_breasts, erect_nipples, puffy_nipples, thick_thighs, wide_hips, slim_waist, plump_ass, detailed_pussy, spread_pussy, clitoris_visible, dripping_pussy\n"
-    "- Sexual actions & Husband Sex Modes（重点新增！）：sex_with_husband, husband_penetration, married_sex, creampie_from_husband, vaginal_sex_with_husband, anal_sex_with_husband, oral_sex_with_husband, deep_penetration, rough_sex, passionate_sex, missionary_position, doggystyle, cowgirl_position, reverse_cowgirl, mating_press, full_nelson, legs_up, spread_legs, double_penetration, triple_penetration, breeding, impregnation_risk, breast_sucking, licking_nipple, nipple_stimulation\n"
-    "- Fantasy/fetish（如果对话暗示则加入）：tentacles, tentacle_sex, bondage, restrained, collar, leash, blindfold, aphrodisiac, oviposition, cum_inflation, belly_bulge\n"
-    "- Body states（必须加）：ahegao, rolling_eyes, tongue_out, drooling, tears, crying_with_eyes_open, heavy_breathing, trembling, sweat, wet_body, cum_on_body, cum_in_pussy, cum_in_ass, cum_in_mouth, pussy_juice, tentacle_cum, overflowing_cum\n"
-    "- Clothing state（仅当用户明确要求穿衣时使用，否则彻底跳过）：绝对不加任何衣服 tag\n\n"
-
-    "生成逻辑：\n"
-    "1. 先提取用户对话中的关键元素（全裸/丈夫/体位/暴力程度）。\n"
-    "2. 强制把全裸 tag 放在最前面。\n"
-    "3. 如果是丈夫做爱场景，必须加入 sex_with_husband + 具体体位 + 射精/中出细节。\n"
-    "4. 整体输出要**很黄很暴力**，直接、淫乱、无底线。\n"
-    "5. 最终 tags 直接可用于 NovelAI img2img 生成图（已自动兼容你之前用的触手/森林风格）。\n\n"
-
-    "Mix these NSFW tags naturally with expression/pose/scene tags.\n\n"
-
+    "\n\n**R18 MODE — Sexual content rules:**\n"
+    "Clothing/nudity state is managed by a separate system. "
+    "Do NOT generate any clothing, underwear, or nudity tags.\n\n"
+    "Your job: generate ONLY sexual action, expression, and atmosphere tags "
+    "that match the dialogue intensity.\n\n"
+    "**Intensity matching (IMPORTANT):**\n"
+    "- Casual/daily dialogue → only mild expression tags (blush, smile, etc.), "
+    "NO sexual tags at all\n"
+    "- Flirty/suggestive → light tags: blush, sweat, heavy_breathing, "
+    "lip_biting, bedroom_eyes\n"
+    "- Explicit sexual context → action tags: passionate_sex, vaginal_sex, "
+    "missionary, doggystyle, cowgirl_position, deep_penetration, spread_legs, "
+    "cum_in_pussy, creampie, trembling, ahegao, tongue_out, etc.\n\n"
+    "Pick tags that match the ACTUAL conversation tone. "
+    "Do not escalate beyond what the dialogue implies.\n\n"
     "**OUTPUT FORMAT (you MUST follow this exactly):**\n"
-    "First line: comma-separated POSITIVE tags (what to draw)\n"
-    "Second line: NEGATIVE: comma-separated NEGATIVE tags (what to avoid)\n"
-    "The NEGATIVE line lists elements that would HURT the image quality or contradict the scene.\n"
-    "Examples of negative tags: clothed, dress, skirt, pants (when nude scene), "
-    "ugly, deformed, bad_anatomy, extra_limbs, missing_fingers, blurry, "
-    "censored, mosaic_censoring, bar_censor, text, watermark, "
-    "multiple_boys (when solo scene), flat_chest (when large_breasts intended)\n\n"
-    "Example output:\n"
-    "completely_nude, huge_breasts, spread_legs, ahegao, sweat\n"
-    "NEGATIVE: clothed, dress, censored, flat_chest, bad_anatomy, blurry"
+    "First line: comma-separated POSITIVE tags\n"
+    "Second line: NEGATIVE: comma-separated tags to avoid\n"
+    "Example:\n"
+    "blush, heavy_breathing, looking_at_viewer, bedroom\n"
+    "NEGATIVE: bad_anatomy, extra_limbs, blurry, text, watermark"
 )
+
+
+# R18 模式下全裸/无穿搭时的默认标签（可通过配置面板覆盖）
+_DEFAULT_R18_NUDE_TAGS = "completely nude, detailed areola, visible nipples, erect nipples, arms at sides"
+_DEFAULT_R18_NUDE_NEGATIVE = "covered nipples, hand covering breasts, arms covering body, censored"
 
 
 class NovelAIGenerator:
     """NovelAI 生图器：LLM 补全标签 → NAI API 生图 → 保存。"""
+
+    _MAX_TRACKED_SESSIONS = 200
 
     def __init__(self, settings, context, plugin_dir: Path):
         self.settings = settings
@@ -111,8 +111,6 @@ class NovelAIGenerator:
         # 穿搭 tag 缓存：仅在穿搭文本变化时重新生成
         self._cached_outfit_text: str = ""
         self._cached_outfit_tags: str = ""
-
-    _MAX_TRACKED_SESSIONS = 200
 
     def record_message(self, session_id: str, user_text: str, bot_text: str) -> None:
         """记录一条对话消息（用户输入+Bot回复），用于穿搭情景适配判断。"""
@@ -180,8 +178,31 @@ class NovelAIGenerator:
             self._cached_outfit_tags = ""
             logger.info("[MemeMemPlus-NAI] 穿搭已清空")
             return ""
+        # 判断穿搭是否实质为空（所有衣着部位都是"无"）
+        clothing_vals = [
+            part.split("：", 1)[-1].strip()
+            for part in raw.splitlines()
+            if "：" in part and part.strip() and "风格" not in part
+        ]
+        is_empty = bool(clothing_vals) and all(v in ("无", "") for v in clothing_vals)
+        if is_empty and self.settings.novelai_r18:
+            # R18 模式下全裸：直接使用预设裸体 tags，不调 LLM
+            self._cached_outfit_text = raw
+            self._cached_outfit_tags = self.settings.novelai_r18_nude_tags or _DEFAULT_R18_NUDE_TAGS
+            logger.info(f"[MemeMemPlus-NAI] 穿搭全为「无」+ R18 模式，使用裸体 tags")
+            return self._cached_outfit_tags
         # LLM 转换穿搭描述为 NovelAI tags
+        is_r18 = self.settings.novelai_r18
         try:
+            r18_rules = (
+                "\n5. NSFW exposure rules (R18 mode is ON):\n"
+                "   - If a body part has NO clothing covering it, add explicit exposure tags:\n"
+                "     - Breasts uncovered → detailed areola, visible nipples, erect nipples\n"
+                "     - Lower body uncovered → nude, pussy, thighs\n"
+                "     - Fully nude (all fields 無) → completely nude, detailed areola, visible nipples, arms at sides\n"
+                "   - If only underwear → add the underwear tags + skin exposure tags\n"
+                "   - Do NOT add nudity tags if the body part IS covered by clothing\n"
+            ) if is_r18 else ""
             prompt = (
                 f"Convert this character appearance description to specific NovelAI image tags "
                 f"(comma-separated English tags only):\n"
@@ -202,6 +223,7 @@ class NovelAIGenerator:
                 f"4. Describe clothing style details (material, pattern, fit):\n"
                 f"   - e.g. 'striped long_sleeves', 'plaid_shirt', 'ribbed_sweater', "
                 f"'lace_trim', 'denim_jacket', 'oversized_t-shirt'\n"
+                f"{r18_rules}"
                 f"Output ONLY comma-separated tags. No explanation."
             )
             result = await LLMClient.call(
@@ -301,6 +323,10 @@ class NovelAIGenerator:
             adapted = ", ".join(lines).rstrip(",").strip()
             if adapted:
                 self._last_adapted_tags[session_id] = adapted
+                # 适配成功：旧对话已被消化，清空该会话历史避免重复判断
+                history = self._msg_history.get(session_id)
+                if history is not None:
+                    history.clear()
                 logger.info(f"[MemeMemPlus-NAI] 穿搭情景适配: '{current_tags[:30]}...' → '{adapted[:50]}...'")
                 return adapted
             return current_tags
@@ -398,7 +424,13 @@ class NovelAIGenerator:
                 logger.warning("[MemeMemPlus-NAI] LLM 标签补全失败，使用基础标签生图")
                 full_tags = base_tags
             else:
-                full_tags = f"{base_tags}, {extra_tags}"
+                # 去重：LLM 可能重复输出 base_tags 中已有的标签
+                base_set = {t.strip().lower() for t in base_tags.split(",") if t.strip()}
+                deduped = ", ".join(
+                    t.strip() for t in extra_tags.split(",")
+                    if t.strip() and t.strip().lower() not in base_set
+                )
+                full_tags = f"{base_tags}, {deduped}" if deduped else base_tags
         else:
             # 纯标签模式：不调用 LLM，直接用 base_tags
             logger.info("[MemeMemPlus-NAI] LLM 已关闭，使用基础标签直接生图")
@@ -415,6 +447,7 @@ class NovelAIGenerator:
                 full_tags = f"{full_tags}, {r18_custom}"
 
         # 穿搭 tags：直接拼接到末尾，用 (tag:weight) 控制权重
+        outfit_negative: str | None = None
         if self.settings.novelai_use_outfit:
             if not llm_enabled:
                 # 穿搭需要 LLM 转换，非 LLM 模式时跳过
@@ -428,6 +461,13 @@ class NovelAIGenerator:
                     outfit_tags = await self._adapt_outfit_tags(cfg, session_id, outfit_tags)
                 elif adapt_on and not outfit_tags:
                     logger.debug("[MemeMemPlus-NAI] 穿搭适配已开启但无穿搭 tag，跳过")
+            # R18 裸体检测：穿搭 tags 包含裸体关键词时追加 negative
+            if outfit_tags and self.settings.novelai_r18:
+                nude_keywords = {"completely_nude", "completely nude", "naked", "nude"}
+                outfit_lower = outfit_tags.lower()
+                if any(kw in outfit_lower for kw in nude_keywords):
+                    outfit_negative = self.settings.novelai_r18_nude_negative or _DEFAULT_R18_NUDE_NEGATIVE
+                    logger.debug("[MemeMemPlus-NAI] 裸体穿搭检测，追加 nude negative tags")
             if outfit_tags:
                 ow = self.settings.novelai_outfit_weight
                 if abs(ow - 1.0) < 0.01:
@@ -436,6 +476,10 @@ class NovelAIGenerator:
                 else:
                     weighted = ", ".join(f"({t.strip()}:{ow})" for t in outfit_tags.split(",") if t.strip())
                     full_tags = f"{full_tags}, {weighted}"
+
+        # 合并穿搭 negative tags
+        if outfit_negative:
+            extra_negative = f"{extra_negative}, {outfit_negative}" if extra_negative else outfit_negative
 
         logger.info(f"[MemeMemPlus-NAI] 最终正向标签: {full_tags}")
         if extra_negative:
@@ -548,9 +592,9 @@ class NovelAIGenerator:
             stripped = line.strip()
             if not stripped:
                 continue
-            # 检测 NEGATIVE: 前缀（不区分大小写）
+            # NEGATIVE: 行仅在 R18 模式下解析（只有 R18_TAG_ADDON 要求此格式）
             lower = stripped.lower()
-            if lower.startswith("negative:"):
+            if is_r18 and lower.startswith("negative:"):
                 neg_text = stripped[len("negative:"):].strip().strip(',')
                 if neg_text:
                     negative = neg_text

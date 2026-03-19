@@ -355,14 +355,24 @@ LLM Vision 分析每张图片的表情/心情
 - **穿搭适配细节强化**：prompt 要求 LLM 输出最大化细节的穿着标签（如 `pink_lace_bra` 而非 `bra`），并在穿着变化时只修改对话中明确变化的部分
 - **新增配置项 `novelai_outfit_history`**：控制穿搭情景适配参考的对话条数，默认 20 条，无上限
 - **对话消息自动记录**：每次 Bot 回复时自动记录用户输入和回复内容到内存（按会话隔离，最多 50 条），供穿搭情景适配使用
+- **R18 职责分离重构**：`R18_TAG_ADDON` 精简为只负责性行为/氛围 tag 生成，裸体/衣着状态完全交给穿搭系统管理。新增对话强度匹配逻辑（日常→仅表情，暧昧→轻度，明确性行为→完整动作 tag），移除硬编码的角色特定逻辑（丈夫/触手等），改为用户通过 `novelai_r18_custom_tags` 自定义
+- **R18 裸体 tag 自动注入**：穿搭全为"无"时自动注入 `R18_NUDE_TAGS`（completely nude, detailed areola, visible nipples 等）+ `R18_NUDE_NEGATIVE`（covered nipples, hand covering breasts 等），仅 R18 模式生效
+- **穿搭转 tag 支持 R18 裸露判断**：`_refresh_outfit_tags` 的 LLM prompt 在 R18 模式下新增裸露规则，LLM 根据穿搭描述中哪个部位无遮挡自动输出对应的裸露 tag
+- **LLM 标签补全禁止生成衣着 tag**：`DEFAULT_TAG_PROMPT` 新增明确禁止规则，LLM 补全时不再生成服装、袜子/腿部穿着、头饰/发饰、鞋子、配饰类 tag，避免与穿搭注入系统产生冲突
+- **LLM 标签去重**：LLM 补全输出的 tag 与 `base_tags` 自动比对，已存在的标签不再重复拼接
 - **代码清理**：移除所有废弃的 `getattr` 防御代码（`novelai_generator`、`auto_updater`、`main`），所有配置字段改为直接属性访问；移除 `_adapt_outfit_tags` 中冗余的空列表检查
+- **修复 SFW 模式衣着 tag 冲突**：`SFW_TAG_ADDON` 中 "允许" 示例列表包含衣着类 tag（bikini、thighhighs 等），与禁止衣着规则矛盾。改为仅列举肌肤露出 tag 作为允许示例
 - **修复 KEEP 返回基础穿搭而非上次适配（严重）**：`_adapt_outfit_tags` 在 LLM 返回 KEEP 时错误地返回基础穿搭 tag，导致正在泡澡的角色突然穿回 T 恤。现在 KEEP 正确返回上次适配结果
 - **修复适配异常时丢失穿着状态**：`_adapt_outfit_tags` 在 LLM 调用异常时返回基础穿搭而非上次适配结果，导致网络抖动时角色穿着状态回退。现在异常时也保持上次适配状态
 - **修复基础穿搭变化未清除适配缓存**：`_refresh_outfit_tags` 检测到穿搭文本变化时未清除 `_last_adapted_tags`，导致新穿搭下 LLM 仍参考旧适配结果
+- **修复穿搭变化未清空消息历史**：`_refresh_outfit_tags` 检测到穿搭变化时同步清空 `_msg_history`，避免 LLM 基于旧穿搭下的对话上下文做换装判断
+- **修复穿搭适配成功后未清空对话历史**：`_adapt_outfit_tags` 成功输出新穿搭 tags 后清空该会话消息历史，避免下次适配重复判断
 - **修复缓存清理 TOCTOU 竞态（严重）**：`_enforce_cache_limit` 中 `f.exists()` 与 `f.stat()` 之间文件可能被并发删除导致 `FileNotFoundError`。改用 try/except 的 `_safe_mtime` 辅助函数
 - **移除 `_generate_tags` 废弃参数**：清理 v3.7.0 移除标签历史后遗留的 `session_id` 参数
 - **防止会话历史内存泄漏**：`_msg_history` 新增最大 200 会话数限制，超限时淘汰最早的会话并清理对应的适配缓存
-- **修复穿搭变化未清空消息历史**：`_refresh_outfit_tags` 检测到穿搭变化时仅清除了适配缓存，未清除 `_msg_history`，导致 LLM 基于旧穿搭下的对话上下文做换装判断
+- **修复穿搭全裸检测误判（严重）**：`is_empty` 使用 `all()` + `else False` 检查穿搭是否全为"无"，但不含 `：` 的行（如 `outfit_style` 拼接文本）会返回 False 导致整体判断失败。改为先过滤出含 `：` 的衣着行再判断，确保全裸快速路径和 R18 裸体 tag 注入正确触发
+- **R18 裸体标签可配置**：新增 `novelai_r18_nude_tags`（全裸正向标签）和 `novelai_r18_nude_negative`（全裸负向标签）配置项，用户可在配置面板自定义，不再硬编码
+- **修复非 R18 模式误解析 NEGATIVE 行**：`_parse_tag_result` 在非 R18 模式下仍解析 `NEGATIVE:` 前缀，可能将正向 tag（如 `negative_space`）误判为负向标签行。改为仅在 R18 模式解析
 
 ### v3.6.1
 

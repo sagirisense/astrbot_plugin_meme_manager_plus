@@ -103,6 +103,8 @@ class PluginSettings:
     novelai_use_outfit: bool = False  # 从 life_scheduler 获取今日穿搭注入标签
     novelai_custom_tags: str = ""  # 用户自定义标签，直接追加到最终正向标签末尾
     novelai_r18_custom_tags: str = ""  # R18 模式专用自定义标签
+    novelai_r18_nude_tags: str = "completely nude, detailed areola, visible nipples, erect nipples, arms at sides"
+    novelai_r18_nude_negative: str = "covered nipples, hand covering breasts, arms covering body, censored"
     novelai_llm_enabled: bool = True  # 是否用 LLM 补全标签，关闭后直接用 base_tags
     novelai_sticker_mode: bool = True  # NovelAI 独立小图模式
     novelai_direct_model: str = ""  # /ni 原图模式专用模型，留空使用 novelai_model
@@ -221,6 +223,8 @@ class ConfigLoader:
         s.novelai_use_outfit = self._get("novelai_settings", "novelai_use_outfit", default=False)
         s.novelai_custom_tags = self._get("novelai_settings", "novelai_custom_tags", default="")
         s.novelai_r18_custom_tags = self._get("novelai_settings", "novelai_r18_custom_tags", default="")
+        s.novelai_r18_nude_tags = self._get("novelai_settings", "novelai_r18_nude_tags", default="completely nude, detailed areola, visible nipples, erect nipples, arms at sides")
+        s.novelai_r18_nude_negative = self._get("novelai_settings", "novelai_r18_nude_negative", default="covered nipples, hand covering breasts, arms covering body, censored")
         s.novelai_llm_enabled = self._get("novelai_settings", "novelai_llm_enabled", default=True)
         s.novelai_sticker_mode = self._get("novelai_settings", "novelai_sticker_mode", default=True)
         s.novelai_direct_model = self._get("novelai_settings", "novelai_direct_model", default="")
