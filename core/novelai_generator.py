@@ -37,6 +37,7 @@ DEFAULT_TAG_PROMPT = (
     "DO NOT generate any of the following — they are managed separately:\n"
     "- Clothing/outfit tags (dress, shirt, skirt, jacket, uniform, etc.)\n"
     "- Hosiery/legwear (thighhighs, stockings, socks, pantyhose, etc.)\n"
+    "- Hairstyle tags (ponytail, braid, hair_bun, hair_down, twintails, etc.)\n"
     "- Headwear/hair accessories (hat, ribbon, hairband, bow, crown, etc.)\n"
     "- Footwear (shoes, boots, sandals, etc.)\n"
     "- Accessories (glasses, necklace, earrings, bag, etc.)\n\n"
@@ -85,6 +86,16 @@ R18_TAG_ADDON = (
 # R18 模式下全裸/无穿搭时的默认标签（可通过配置面板覆盖）
 _DEFAULT_R18_NUDE_TAGS = "completely nude, detailed areola, visible nipples, erect nipples, arms at sides"
 _DEFAULT_R18_NUDE_NEGATIVE = "covered nipples, hand covering breasts, arms covering body, censored"
+
+# 发型固定：束发类 tag 集合（检测到时在负向加散发，反之亦然）
+_HAIR_UP_KEYWORDS = {
+    "ponytail", "high_ponytail", "low_ponytail", "side_ponytail",
+    "twintails", "twin_braids", "braid", "braids", "side_braid", "french_braid",
+    "hair_bun", "double_bun", "updo", "chignon", "hair_up",
+}
+_HAIR_DOWN_POSITIVE = "hair down, flowing hair"
+_HAIR_DOWN_NEGATIVE = "ponytail, braid, twintails, hair_bun, updo, hair_up"
+_HAIR_UP_NEGATIVE = "hair down, flowing hair"
 
 
 class NovelAIGenerator:
@@ -223,6 +234,9 @@ class NovelAIGenerator:
                 f"4. Describe clothing style details (material, pattern, fit):\n"
                 f"   - e.g. 'striped long_sleeves', 'plaid_shirt', 'ribbed_sweater', "
                 f"'lace_trim', 'denim_jacket', 'oversized_t-shirt'\n"
+                f"5. HAIRSTYLE (MANDATORY): Always include hairstyle tags.\n"
+                f"   - If the description mentions a hairstyle → use that (e.g. ponytail, braid, hair_bun)\n"
+                f"   - If NO hairstyle is mentioned → default to: hair down, flowing hair\n"
                 f"{r18_rules}"
                 f"Output ONLY comma-separated tags. No explanation."
             )
@@ -461,12 +475,26 @@ class NovelAIGenerator:
                     outfit_tags = await self._adapt_outfit_tags(cfg, session_id, outfit_tags)
                 elif adapt_on and not outfit_tags:
                     logger.debug("[MemeMemPlus-NAI] 穿搭适配已开启但无穿搭 tag，跳过")
+            # 发型固定：检测 outfit_tags 中的发型，生成对应 negative 防止冲突
+            if outfit_tags:
+                outfit_tag_set = {t.strip().lower().replace(" ", "_") for t in outfit_tags.split(",")}
+                has_hair_up = bool(outfit_tag_set & _HAIR_UP_KEYWORDS)
+                if has_hair_up:
+                    # 束发类发型 → negative 加散发
+                    hair_neg = _HAIR_UP_NEGATIVE
+                else:
+                    # 散发或无发型 → 确保有散发正向 tag，negative 加束发
+                    if "hair_down" not in outfit_tag_set and "flowing_hair" not in outfit_tag_set:
+                        outfit_tags = f"{outfit_tags}, {_HAIR_DOWN_POSITIVE}"
+                    hair_neg = _HAIR_DOWN_NEGATIVE
+                outfit_negative = f"{outfit_negative}, {hair_neg}" if outfit_negative else hair_neg
             # R18 裸体检测：穿搭 tags 包含裸体关键词时追加 negative
             if outfit_tags and self.settings.novelai_r18:
                 nude_keywords = {"completely_nude", "completely nude", "naked", "nude"}
                 outfit_lower = outfit_tags.lower()
                 if any(kw in outfit_lower for kw in nude_keywords):
-                    outfit_negative = self.settings.novelai_r18_nude_negative or _DEFAULT_R18_NUDE_NEGATIVE
+                    nude_neg = self.settings.novelai_r18_nude_negative or _DEFAULT_R18_NUDE_NEGATIVE
+                    outfit_negative = f"{outfit_negative}, {nude_neg}" if outfit_negative else nude_neg
                     logger.debug("[MemeMemPlus-NAI] 裸体穿搭检测，追加 nude negative tags")
             if outfit_tags:
                 ow = self.settings.novelai_outfit_weight
