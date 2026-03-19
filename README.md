@@ -380,6 +380,8 @@ LLM Vision 分析每张图片的表情/心情
 - **发型固定系统**：穿搭转 tag 时 LLM 必须输出发型标签（无指定则默认 `hair down, flowing hair`）。生图时自动检测发型并在负向标签加入冲突发型（散发→负向加束发类，束发→负向加散发），与穿搭情景适配联动，适配改变发型后 negative 自动同步
 - **修复 R18 negative 覆盖发型 negative（严重）**：R18 检测使用赋值而非追加设置 `outfit_negative`，导致发型固定的负向标签被覆盖。改为追加合并
 - **LLM 标签补全禁止生成发型 tag**：`DEFAULT_TAG_PROMPT` 禁止列表新增发型标签（ponytail、braid、hair_down 等），防止 LLM 补全输出的发型与穿搭系统固定的发型冲突
+- **头饰位置固定**：穿搭转 tag 和情景适配 prompt 均要求 LLM 为头饰指定固定位置（如 `hair_ribbon_on_left`、`hairpin_on_right`），确保跨图位置一致
+- **穿搭适配发型连续性**：`_adapt_outfit_tags` prompt 新增发型和头饰连续性规则，适配时保持发型不变、头饰位置不移动，除非对话明确要求改变
 
 ### v3.6.1
 
