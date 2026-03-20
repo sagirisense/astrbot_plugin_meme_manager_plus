@@ -25,6 +25,7 @@ from .core.image_manager import MoodImageManager
 from .core.auto_updater import AutoUpdater
 from .core.novelai_generator import NovelAIGenerator
 from .utils.cooldown_manager import CooldownManager
+from .utils.provider_helper import load_mood_provider
 
 
 def _format_search_result(result: dict, prefix: str = "搜图") -> str:
@@ -121,6 +122,12 @@ class MoodMemePlugin(Star):
         # 保存后台任务引用，防止被 GC 回收导致异常丢失
         self._bg_tasks: set[asyncio.Task] = set()
 
+    def _record_last_sent(self, origin: str, path: Path, msg_id: str | int | None) -> None:
+        """记录最近发送的图片，超限时 FIFO 淘汰。"""
+        self._last_sent[origin] = (path, msg_id)
+        while len(self._last_sent) > self._MAX_LAST_SENT:
+            self._last_sent.popitem(last=False)
+
         # 启动穿搭自动同步任务（检测 life_scheduler 更新）
         if self.settings.novelai_use_outfit:
             self._launch_bg_task(self._outfit_sync_loop())
@@ -136,7 +143,16 @@ class MoodMemePlugin(Star):
         """创建后台任务并持有引用，任务完成后自动移除。"""
         task = asyncio.create_task(coro)
         self._bg_tasks.add(task)
-        task.add_done_callback(self._bg_tasks.discard)
+
+        def _on_done(t: asyncio.Task):
+            self._bg_tasks.discard(t)
+            if t.cancelled():
+                return
+            exc = t.exception()
+            if exc:
+                logger.error(f"[MemeMemPlus] 后台任务未捕获异常: {type(exc).__name__}: {exc}")
+
+        task.add_done_callback(_on_done)
         return task
 
     async def _outfit_sync_loop(self):
@@ -144,12 +160,15 @@ class MoodMemePlugin(Star):
         await asyncio.sleep(30)  # 首次延迟 30 秒，避免初始化冲突
         while True:
             try:
-                if self.settings.novelai_use_outfit:
+                if self.settings.novelai_use_outfit and self.settings.novelai_llm_enabled:
                     raw_outfit = self.novelai_gen._get_raw_outfit()
                     if raw_outfit and raw_outfit != self.novelai_gen._cached_outfit_text:
-                        logger.info(f"[MemeMemPlus] 检测到穿搭变化，自动刷新缓存")
-                        await self.novelai_gen._refresh_outfit_tags()
-                        logger.info(f"[MemeMemPlus] 穿搭缓存已更新: {self.novelai_gen._cached_outfit_tags[:60]}")
+                        from .utils.provider_helper import load_mood_provider
+                        cfg = load_mood_provider(self.context, self.settings, self.settings.novelai_llm_provider_id)
+                        if cfg.valid:
+                            logger.info(f"[MemeMemPlus] 检测到穿搭变化，自动刷新缓存")
+                            await self.novelai_gen._refresh_outfit_tags(cfg)
+                            logger.info(f"[MemeMemPlus] 穿搭缓存已更新: {self.novelai_gen._cached_outfit_tags[:60]}")
             except Exception as e:
                 logger.debug(f"[MemeMemPlus] 穿搭同步异常: {e}")
             await asyncio.sleep(60)  # 每分钟检查一次
@@ -161,7 +180,13 @@ class MoodMemePlugin(Star):
         for task in tasks:
             task.cancel()
         if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*tasks, return_exceptions=True),
+                    timeout=5.0,
+                )
+            except asyncio.TimeoutError:
+                logger.warning("[MemeMemPlus] 后台任务未在 5 秒内结束，强制清理")
         self._bg_tasks.clear()
         from .utils.llm_client import LLMClient
         await LLMClient.close()
@@ -253,10 +278,7 @@ class MoodMemePlugin(Star):
                 if image_bytes:
                     logger.info(f"[MemeMemPlus] 随机抽取: {picked.name}, mood={mood}")
                     sent_msg_id = await self._send_image(event, image_bytes)
-                    self._last_sent[event.unified_msg_origin] = (picked, sent_msg_id)
-                    # 防止 _last_sent 无限增长
-                    while len(self._last_sent) > self._MAX_LAST_SENT:
-                        self._last_sent.popitem(last=False)
+                    self._record_last_sent(event.unified_msg_origin, picked, sent_msg_id)
 
             # 第二级：LLM 生图概率（独立判定，发送后再生图入库）
             if not (
@@ -300,9 +322,7 @@ class MoodMemePlugin(Star):
 
             sent_msg_id = await self._send_image(event, image_bytes, sticker=self.settings.novelai_sticker_mode)
             if save_path:
-                self._last_sent[event.unified_msg_origin] = (Path(save_path), sent_msg_id)
-                while len(self._last_sent) > self._MAX_LAST_SENT:
-                    self._last_sent.popitem(last=False)
+                self._record_last_sent(event.unified_msg_origin, Path(save_path), sent_msg_id)
             logger.info(f"[MemeMemPlus-NAI] 生图完成并发送, saved={save_path}")
 
         except Exception:
@@ -345,7 +365,7 @@ class MoodMemePlugin(Star):
         try:
             use_sticker = sticker if sticker is not None else self.settings.sticker_mode
             if use_sticker:
-                image_bytes = self._to_sticker(image_bytes)
+                image_bytes = await asyncio.to_thread(self._to_sticker, image_bytes)
             msg_id = None
             # aiocqhttp: 直接调用 bot API 以获取 message_id
             if hasattr(event, "bot") and hasattr(event.bot, "send_group_msg"):
@@ -475,8 +495,11 @@ class MoodMemePlugin(Star):
             raw_outfit = gen._get_raw_outfit()
             plugin_found = gen._life_plugin is not None
             # 主动刷新穿搭缓存（检测 life_scheduler 的更新）
-            if self.settings.novelai_use_outfit and raw_outfit:
-                await gen._refresh_outfit_tags()
+            if self.settings.novelai_use_outfit and self.settings.novelai_llm_enabled and raw_outfit:
+                from .utils.provider_helper import load_mood_provider
+                cfg = load_mood_provider(self.context, self.settings, self.settings.novelai_llm_provider_id)
+                if cfg.valid:
+                    await gen._refresh_outfit_tags(cfg)
             outfit_tags = gen._cached_outfit_tags or "无"
             # 汇总所有会话的对话历史
             all_history = dict(gen._msg_history)  # snapshot
@@ -623,9 +646,7 @@ class MoodMemePlugin(Star):
                     return
                 sent_msg_id = await self._send_image(event, image_bytes, sticker=use_sticker)
                 if save_path:
-                    self._last_sent[event.unified_msg_origin] = (Path(save_path), sent_msg_id)
-                    while len(self._last_sent) > self._MAX_LAST_SENT:
-                        self._last_sent.popitem(last=False)
+                    self._record_last_sent(event.unified_msg_origin, Path(save_path), sent_msg_id)
                 logger.info(f"[MemeMemPlus-NAI] /ni 生图完成, saved={save_path}")
             except Exception:
                 logger.error(f"[MemeMemPlus-NAI] /ni 后台任务异常: {traceback.format_exc()}")
