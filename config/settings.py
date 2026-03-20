@@ -207,7 +207,7 @@ class ConfigLoader:
         s.pixiv_allow_r18 = self._get("auto_update_settings", "pixiv_allow_r18", default=False)
 
         # NovelAI
-        s.novelai_enabled = self._get("novelai_settings", "novelai_enabled", default=False)
+        s.novelai_enabled = self._get("novelai_settings", "novelai_enabled", default=True)
         s.novelai_llm_provider_id = self._get("novelai_settings", "novelai_llm_provider_id", default="")
         s.novelai_api_key = self._get("novelai_settings", "novelai_api_key", default="")
         s.novelai_model = self._get("novelai_settings", "novelai_model", default="nai-diffusion-4-5-full")
