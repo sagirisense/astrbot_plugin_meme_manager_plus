@@ -32,9 +32,13 @@ git clone https://github.com/Sloan-YXT/astrbot_plugin_meme_manager_plus
 
 | 插件 | 用途 | 是否必须 |
 |------|------|----------|
-| `astrbot_plugin_life_scheduler` | 提供每日穿搭数据，供 NovelAI 穿搭 tag 注入和情景适配使用 | 否 |
+| [`astrbot_plugin_life_scheduler`](https://github.com/zouyonghe/astrbot_plugin_life_scheduler) | 提供每日穿搭数据，供 NovelAI 穿搭 tag 注入和情景适配使用 | 否 |
+| [`astrbot_plugin_life_scheduler_plus`](https://github.com/Sloan-YXT/astrbot_plugin_life_scheduler_plus) | life_scheduler 的增强版，新增 `/改穿搭`、`/查穿搭` 指令和换装时间点，兼容原插件所有功能（**推荐**） | 否 |
 
-穿搭相关功能（`novelai_use_outfit`、`novelai_outfit_adapt`）依赖 `life_scheduler` 插件提供穿搭描述。未安装时这些功能自动跳过，不影响其他功能。`life_scheduler` 的 `/改穿搭` 命令可实时修改穿搭，本插件会自动检测变化并重新生成 tag。
+> **推荐使用 life_scheduler_plus**：本插件作者维护的增强版，支持 `/改穿搭`、`/查穿搭` 等指令并新增换装时间点功能，与本插件更适配。不会发布在插件市场，请从 GitHub 手动安装。
+> **注意：两个 life_scheduler 不能同时安装**，命令和数据结构会冲突，选装其中一个即可。
+
+穿搭相关功能（`novelai_use_outfit`、`novelai_outfit_adapt`）依赖 life_scheduler 系列插件提供穿搭描述。未安装时这些功能自动跳过，不影响其他功能。`/改穿搭` 命令可实时修改穿搭，本插件会自动检测变化并重新生成 tag。
 
 ### 与 meme_manager 的关系
 
