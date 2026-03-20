@@ -9,6 +9,7 @@ import base64
 import collections
 import hashlib
 import random
+import re
 import zipfile
 import io
 import traceback
@@ -100,6 +101,17 @@ _HAIR_UP_KEYWORDS = {
 _HAIR_DOWN_POSITIVE = "hair down, flowing hair"
 _HAIR_DOWN_NEGATIVE = "ponytail, braid, twintails, hair_bun, updo, hair_up"
 _HAIR_UP_NEGATIVE = "hair down, flowing hair"
+
+# 正则：去除 NovelAI 权重语法 ((tag:1.2)) / {{{tag}}} / [tag] 用于去重比较
+_WEIGHT_RE = re.compile(r"[(){}\[\]]")
+_WEIGHT_SUFFIX_RE = re.compile(r":\d+\.?\d*$")
+
+
+def _normalize_tag(tag: str) -> str:
+    """去除权重语法，返回纯标签文本用于去重比较。"""
+    t = _WEIGHT_RE.sub("", tag).strip()
+    t = _WEIGHT_SUFFIX_RE.sub("", t).strip()
+    return t.lower()
 
 
 class NovelAIGenerator:
@@ -456,11 +468,11 @@ class NovelAIGenerator:
                 logger.warning("[MemeMemPlus-NAI] LLM 标签补全失败，使用基础标签生图")
                 full_tags = base_tags
             else:
-                # 去重：LLM 可能重复输出 base_tags 中已有的标签
-                base_set = {t.strip().lower() for t in base_tags.split(",") if t.strip()}
+                # 去重：LLM 可能重复输出 base_tags 中已有的标签（去除权重语法后比较）
+                base_set = {_normalize_tag(t) for t in base_tags.split(",") if t.strip()}
                 deduped = ", ".join(
                     t.strip() for t in extra_tags.split(",")
-                    if t.strip() and t.strip().lower() not in base_set
+                    if t.strip() and _normalize_tag(t) not in base_set
                 )
                 full_tags = f"{base_tags}, {deduped}" if deduped else base_tags
         else:
@@ -559,6 +571,7 @@ class NovelAIGenerator:
             return None, None
 
         logger.info(f"[MemeMemPlus-NAI] /ni 直接生图, 正向标签: {positive_tags}, 模型: {model_override or '默认'}")
+        logger.info(f"[MemeMemPlus-NAI] /ni 负向标签: {self.settings.novelai_negative_prompt}")
         image_bytes = await self._call_nai_api(positive_tags.strip(), model_override=model_override)
         if not image_bytes:
             return None, None

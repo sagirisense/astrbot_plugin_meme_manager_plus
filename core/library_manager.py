@@ -55,11 +55,15 @@ class LibraryManager:
             # 跳过隐藏目录和 Python 缓存目录
             if mood_name.startswith((".", "__")):
                 continue
-            images = [
-                f for f in mood_dir.iterdir()
-                if f.is_file() and f.suffix.lower() in IMAGE_EXTENSIONS
-            ]
-            self._cache[mood_name] = images
+            try:
+                images = [
+                    f for f in mood_dir.iterdir()
+                    if f.is_file() and f.suffix.lower() in IMAGE_EXTENSIONS
+                ]
+                self._cache[mood_name] = images
+            except OSError as e:
+                logger.warning(f"[MemeMemPlus] 扫描目录失败，跳过: {mood_name}: {e}")
+                self._cache[mood_name] = []
 
         stats = self.get_stats()
         total = sum(stats.values())

@@ -292,19 +292,19 @@
       "novelai_base_tags": {
         "description": "角色基础标签（必填）",
         "type": "string",
-        "default": "masterpiece, best quality, 1girl, adult eris greyrat, eris greyrat, (mushoku tensei), well-proportioned body, soft skin, detailed face, delicate skin texturing,noticeble natural breasts,defined bust silhouette, natural cleavage shadows, deep valley shadows, shadows defining depth, (complexion:1.1), noticeable under clothes",
+        "default": "masterpieces, best quality, very aesthetic, highres, 1girl, ((adult eris greyrat:1.2)), ((eris greyrat:1.1)), (perfect face:1.1), strong expression, defined eyebrows, intense gaze, detailed face, delicate skin texturing, (mushoku tensei:1.1), (8 heads tall:1.1), (tall:1.1), slender frame, delicate build, slender figure, graceful posture, smooth skin, natural shape, (teardrop breasts:1.1), defined bust silhouette, noticeable under clothes, natural noticeable breasts, natural cleavage shadows, shadows defining depth, complex lighting, complexion, natural shadow falloff, gentle look, sweet, glossy skin",
         "hint": "角色固定标签（逗号分隔），每次生图都会带上。例如: 1girl, {{{solo}}}, {{{hatsune miku}}}, vocaloid, blue hair, twintails。{{{tag}}} 表示强调。LLM 会在此基础上补全表情/动作/场景标签"
       },
       "novelai_negative_prompt": {
         "description": "负面提示词",
         "type": "string",
-        "default": "lowres, low quality, worst quality, jpeg artifacts, blurry, text, logo, signature, watermark, error, missing fingers, extra digit, bad hands, bad anatomy, deformed limbs, poorly drawn face, disfigured, (small breasts:1.2), (flat chest:1.2), blue hair, green eyes, blonde hair, black hair, different face, 2girls, 3girls, multiple girls, group, cloned face, obese, chubby, (abs:1.2), (toned abdomen:1.2), muscular belly, muscular body, muscle definition, hard body, rigid body, defined stomach muscles,big bomb,thick legs,chubby legs,wide hips, huge ass, big ass, large ass,child, kid,immature,small build, short stature,loli,juvenile, underage,unnatural proportions",
+        "default": "(worst quality, low quality), (bad anatomy, disfigured:1.2), lowres, jpeg artifacts, blurry, watermark, text, signature, mutated hands, poorly drawn face, cloned face, missing fingers, extra digit, deformed limbs, multiple girls, group, (obese, chubby:1.2), (muscular, abs, toned abdomen:1.2), thick legs, wide hips, huge ass, (child, loli, underage, immature:1.05), short stature, flat chest, small breasts, muscular arms, muscular torso, ripped body, powerlifter body, rigid body, stiff posture, manly physique, broad shoulders, heavy build, robust frame, bad foreshortening, squashed breasts, deformed perspective",
         "hint": "不希望出现的元素（逗号分隔）。默认值已覆盖常见质量问题。R18 模式下 LLM 还会动态追加与场景矛盾的负向标签"
       },
       "novelai_custom_tags": {
         "description": "自定义追加标签（非R18专用）",
         "type": "string",
-        "default": "solo",
+        "default": "solo, solo focus",
         "hint": "仅在非 R18 模式下追加到正向标签末尾。R18 模式下此项不生效且 solo 标签会被自动移除。适合填入每张图都想要的固定元素（场景、光效、画风等）。拼接顺序：基础标签 → LLM 生成 → 本项"
       },
       "novelai_tag_prompt": {
@@ -389,7 +389,7 @@
       "novelai_scale": {
         "description": "提示词引导强度（Guidance）",
         "type": "float",
-        "default": 5.0,
+        "default": 5.5,
         "hint": "CFG Scale，越大越忠于标签但可能过拟合。推荐 4-7"
       },
       "novelai_sampler": {

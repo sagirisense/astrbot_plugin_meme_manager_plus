@@ -89,19 +89,19 @@ class PluginSettings:
     novelai_enabled: bool = False
     novelai_api_key: str = ""
     novelai_model: str = "nai-diffusion-4-5-full"
-    novelai_base_tags: str = "masterpiece, best quality, 1girl, adult eris greyrat, eris greyrat, (mushoku tensei), well-proportioned body, soft skin, detailed face, delicate skin texturing,noticeble natural breasts,defined bust silhouette, natural cleavage shadows, deep valley shadows, shadows defining depth, (complexion:1.1), noticeable under clothes"
-    novelai_negative_prompt: str = "lowres, low quality, worst quality, jpeg artifacts, blurry, text, logo, signature, watermark, error, missing fingers, extra digit, bad hands, bad anatomy, deformed limbs, poorly drawn face, disfigured, (small breasts:1.2), (flat chest:1.2), blue hair, green eyes, blonde hair, black hair, different face, 2girls, 3girls, multiple girls, group, cloned face, obese, chubby, (abs:1.2), (toned abdomen:1.2), muscular belly, muscular body, muscle definition, hard body, rigid body, defined stomach muscles,big bomb,thick legs,chubby legs,wide hips, huge ass, big ass, large ass,child, kid,immature,small build, short stature,loli,juvenile, underage,unnatural proportions"
+    novelai_base_tags: str = "masterpieces, best quality, very aesthetic, highres, 1girl, ((adult eris greyrat:1.2)), ((eris greyrat:1.1)), (perfect face:1.1), strong expression, defined eyebrows, intense gaze, detailed face, delicate skin texturing, (mushoku tensei:1.1), (8 heads tall:1.1), (tall:1.1), slender frame, delicate build, slender figure, graceful posture, smooth skin, natural shape, (teardrop breasts:1.1), defined bust silhouette, noticeable under clothes, natural noticeable breasts, natural cleavage shadows, shadows defining depth, complex lighting, complexion, natural shadow falloff, gentle look, sweet, glossy skin"
+    novelai_negative_prompt: str = "(worst quality, low quality), (bad anatomy, disfigured:1.2), lowres, jpeg artifacts, blurry, watermark, text, signature, mutated hands, poorly drawn face, cloned face, missing fingers, extra digit, deformed limbs, multiple girls, group, (obese, chubby:1.2), (muscular, abs, toned abdomen:1.2), thick legs, wide hips, huge ass, (child, loli, underage, immature:1.05), short stature, flat chest, small breasts, muscular arms, muscular torso, ripped body, powerlifter body, rigid body, stiff posture, manly physique, broad shoulders, heavy build, robust frame, bad foreshortening, squashed breasts, deformed perspective"
     novelai_probability: int = 30
     novelai_width: int = 832
     novelai_height: int = 1216
     novelai_steps: int = 28
-    novelai_scale: float = 5.0
+    novelai_scale: float = 5.5
     novelai_sampler: str = "k_euler_ancestral"
     novelai_tag_prompt: str = ""
     novelai_r18: bool = False  # R18 模式：LLM 额外生成衣着/身体/行为标签
     novelai_safe_mode: bool = True  # 安全模式：非 R18 时强制 SFW 约束
     novelai_use_outfit: bool = False  # 从 life_scheduler 获取今日穿搭注入标签
-    novelai_custom_tags: str = "solo"  # 用户自定义标签，直接追加到最终正向标签末尾
+    novelai_custom_tags: str = "solo, solo focus"  # 用户自定义标签，直接追加到最终正向标签末尾
     novelai_r18_custom_tags: str = ""  # R18 模式专用自定义标签
     novelai_r18_nude_tags: str = "completely nude, detailed areola, visible nipples, erect nipples, arms at sides"
     novelai_r18_nude_negative: str = "covered nipples, hand covering breasts, arms covering body, censored"
@@ -210,18 +210,18 @@ class ConfigLoader:
         s.novelai_api_key = self._get("novelai_settings", "novelai_api_key", default="")
         s.novelai_model = self._get("novelai_settings", "novelai_model", default="nai-diffusion-4-5-full")
         s.novelai_base_tags = self._get("novelai_settings", "novelai_base_tags", default="1girl, solo")
-        s.novelai_negative_prompt = self._get("novelai_settings", "novelai_negative_prompt", default="lowres, {bad}, error, missing, extra, fewer, cropped, worst quality, bad quality, watermark, text, signature, jpeg artifacts, blurry, flat color")
+        s.novelai_negative_prompt = self._get("novelai_settings", "novelai_negative_prompt", default="lowres, bad anatomy, worst quality, blurry, watermark, text, signature")
         s.novelai_probability = self._get("novelai_settings", "novelai_probability", default=30)
         s.novelai_width = self._get("novelai_settings", "novelai_width", default=832)
         s.novelai_height = self._get("novelai_settings", "novelai_height", default=1216)
         s.novelai_steps = self._get("novelai_settings", "novelai_steps", default=28)
-        s.novelai_scale = self._get("novelai_settings", "novelai_scale", default=5.0)
+        s.novelai_scale = self._get("novelai_settings", "novelai_scale", default=5.5)
         s.novelai_sampler = self._get("novelai_settings", "novelai_sampler", default="k_euler_ancestral")
         s.novelai_tag_prompt = self._get("novelai_settings", "novelai_tag_prompt", default="")
         s.novelai_r18 = self._get("novelai_settings", "novelai_r18", default=False)
         s.novelai_safe_mode = self._get("novelai_settings", "novelai_safe_mode", default=True)
         s.novelai_use_outfit = self._get("novelai_settings", "novelai_use_outfit", default=False)
-        s.novelai_custom_tags = self._get("novelai_settings", "novelai_custom_tags", default="")
+        s.novelai_custom_tags = self._get("novelai_settings", "novelai_custom_tags", default="solo, solo focus")
         s.novelai_r18_custom_tags = self._get("novelai_settings", "novelai_r18_custom_tags", default="")
         s.novelai_r18_nude_tags = self._get("novelai_settings", "novelai_r18_nude_tags", default="completely nude, detailed areola, visible nipples, erect nipples, arms at sides")
         s.novelai_r18_nude_negative = self._get("novelai_settings", "novelai_r18_nude_negative", default="covered nipples, hand covering breasts, arms covering body, censored")

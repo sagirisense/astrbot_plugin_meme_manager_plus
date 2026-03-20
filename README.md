@@ -554,17 +554,17 @@ NovelAI 的标签调优很像炼丹——同样的角色，标签的措辞、顺
 
 **正向基础标签 (novelai_base_tags)**：
 ```
-1girl, solo
+masterpieces, best quality, very aesthetic, highres, 1girl, ((adult eris greyrat:1.2)), ((eris greyrat:1.1)), (perfect face:1.1), strong expression, defined eyebrows, intense gaze, detailed face, delicate skin texturing, (mushoku tensei:1.1), (8 heads tall:1.1), (tall:1.1), slender frame, delicate build, slender figure, graceful posture, smooth skin, natural shape, (teardrop breasts:1.1), defined bust silhouette, noticeable under clothes, natural noticeable breasts, natural cleavage shadows,shadows defining depth, complex lighting, complexion, natural shadow falloff,gentle look,sweet,glossy skin
 ```
 
 **自定义追加标签 (novelai_custom_tags)**：
 ```
-solo
+ solo, solo focus
 ```
 
 **负向标签 (novelai_negative_prompt)**：
 ```
-lowres, {bad}, error, missing, extra, fewer, cropped, worst quality, bad quality, watermark, text, signature, jpeg artifacts, blurry, flat color
+(worst quality, low quality), (bad anatomy, disfigured:1.2), lowres, jpeg artifacts, blurry, watermark, text, signature, mutated hands, poorly drawn face, cloned face, missing fingers, extra digit, deformed limbs, multiple girls, group, (obese, chubby:1.2), (muscular, abs, toned abdomen:1.2), thick legs, wide hips, huge ass, (child, loli, underage, immature:1.05), short stature, flat chest, small breasts, muscular arms, muscular torso, ripped body, powerlifter body, rigid body, stiff posture, manly physique, broad shoulders, heavy build, robust frame,bad foreshortening, squashed breasts,deformed perspective
 ```
 
-> 这是最精简的默认配置。使用时需要在 `novelai_base_tags` 中添加角色名和外貌特征（如 `1girl, solo, eris greyrat, red hair, red eyes`），并根据需要扩充负向标签。LLM 会根据对话内容自动补全表情、动作、场景标签，穿搭由 `life_scheduler` 注入。
+> 这是艾莉丝格雷拉特效果还行的默认配置(示例图片可以生成)。注意过于固定的画风/tag一定程度上会影响生图的质量上限，但能提高质量下限并带来连贯的体验，这是一个tradeoff；这种玩法下也只有自己试了。
