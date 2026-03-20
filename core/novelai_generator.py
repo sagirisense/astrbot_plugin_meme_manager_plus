@@ -64,22 +64,26 @@ R18_TAG_ADDON = (
     "Do NOT generate any clothing, underwear, or nudity tags.\n\n"
     "Your job: generate ONLY sexual action, expression, and atmosphere tags "
     "that match the dialogue intensity.\n\n"
-    "**Intensity matching (IMPORTANT):**\n"
+    "**Intensity matching (CRITICAL — follow strictly):**\n"
     "- Casual/daily dialogue → only mild expression tags (blush, smile, etc.), "
-    "NO sexual tags at all\n"
+    "NO sexual tags, NO interaction tags\n"
     "- Flirty/suggestive → light tags: blush, sweat, heavy_breathing, "
     "lip_biting, bedroom_eyes\n"
-    "- Explicit sexual context → action tags: passionate_sex, vaginal_sex, "
-    "missionary, doggystyle, cowgirl_position, deep_penetration, spread_legs, "
-    "cum_in_pussy, creampie, trembling, ahegao, tongue_out, etc.\n\n"
+    "- Explicit sexual context → THIS is when you add interaction tags:\n"
+    "  1) Character count: 1boy, 1girl, hetero (or other combo)\n"
+    "  2) Action tags describing WHO does WHAT: e.g.\n"
+    "     sex, vaginal, missionary, doggystyle, cowgirl_position,\n"
+    "     grabbing_breasts, licking_nipple, oral, fellatio, paizuri,\n"
+    "     deep_penetration, cum_in_pussy, creampie, ahegao, tongue_out\n\n"
     "Pick tags that match the ACTUAL conversation tone. "
     "Do not escalate beyond what the dialogue implies.\n\n"
     "**OUTPUT FORMAT (you MUST follow this exactly):**\n"
     "First line: comma-separated POSITIVE tags\n"
     "Second line: NEGATIVE: comma-separated tags to avoid\n"
-    "Example:\n"
-    "blush, heavy_breathing, looking_at_viewer, bedroom\n"
-    "NEGATIVE: bad_anatomy, extra_limbs, blurry, text, watermark"
+    "Example (casual): smile, looking_at_viewer, park, sunny\n"
+    "NEGATIVE: bad_anatomy, extra_limbs, blurry\n"
+    "Example (explicit): 1boy, hetero, missionary, sex, blush, on_bed\n"
+    "NEGATIVE: bad_anatomy, extra_limbs, blurry"
 )
 
 
@@ -464,11 +468,12 @@ class NovelAIGenerator:
             logger.info("[MemeMemPlus-NAI] LLM 已关闭，使用基础标签直接生图")
             full_tags = base_tags
 
-        # 追加用户自定义标签
-        custom_tags = self.settings.novelai_custom_tags.strip()
-        if custom_tags:
-            full_tags = f"{full_tags}, {custom_tags}"
-        # R18 模式追加专用自定义标签
+        # 追加用户自定义标签（仅非 R18 模式）
+        if not self.settings.novelai_r18:
+            custom_tags = self.settings.novelai_custom_tags.strip()
+            if custom_tags:
+                full_tags = f"{full_tags}, {custom_tags}"
+        # R18 模式：追加专用自定义标签
         if self.settings.novelai_r18:
             r18_custom = self.settings.novelai_r18_custom_tags.strip()
             if r18_custom:
