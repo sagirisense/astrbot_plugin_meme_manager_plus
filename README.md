@@ -38,7 +38,7 @@ git clone https://github.com/Sloan-YXT/astrbot_plugin_meme_manager_plus
 
 ### 与 meme_manager 的关系
 
-本插件的心情表情模式（情绪分析 + 大模型生图 + Booru/Pixiv 爬图入库）借鉴了 [astrbot_plugin_meme_manager](https://github.com/zouyonghe/astrbot_plugin_meme_manager) 的设计思路，在此基础上增加了双级概率、先发后生、Grok 引擎等改进。NovelAI 角色扮演生图模式则是本插件的原创功能，通过 LLM 标签补全 + 穿搭注入 + 情景适配实现连贯的角色插画生成，效果很不错。两个插件可以共存，互不影响。
+本插件的心情表情模式（情绪分析 + 大模型生图 + Booru/Pixiv 爬图入库）借鉴了 [astrbot_plugin_meme_manager](https://github.com/zouyonghe/astrbot_plugin_meme_manager) 的设计思路，简化了提示词注入(不再需要用户配置，直接建立文件夹即可新增心情标签)，在此基础上增加了双级概率、先发后生、Grok 引擎等改进。NovelAI 角色扮演生图模式则是本插件的原创功能，通过 LLM 标签补全 + 穿搭注入 + 情景适配实现连贯的角色插画生成，效果很不错。两个插件可以共存，互不影响。
 
 ## 快速开始
 
