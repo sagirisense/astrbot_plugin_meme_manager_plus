@@ -550,11 +550,11 @@ LLM Vision 分析每张图片的表情/心情
 
 NovelAI 的标签调优很像炼丹——同样的角色，标签的措辞、顺序、权重微调都会显著影响出图效果。没有万能公式，需要反复试验才能找到满意的组合。插件提供了 `/存tag` 和 `/应用tag` 命令，方便你保存和切换调好的"配方"。
 
-以下是产生文档顶部展示效果的默认标签配置（角色：艾莉丝·格雷拉特，无职转生），新用户拉取插件后配置面板会自动填入这些值：
+以下是插件的默认标签配置，新用户拉取插件后配置面板会自动填入这些值：
 
 **正向基础标签 (novelai_base_tags)**：
 ```
-masterpiece, best quality, 1girl, adult eris greyrat, eris greyrat, (mushoku tensei), well-proportioned body, soft skin, detailed face, delicate skin texturing,noticeble natural breasts,defined bust silhouette, natural cleavage shadows, deep valley shadows, shadows defining depth, (complexion:1.1), noticeable under clothes
+1girl, solo
 ```
 
 **自定义追加标签 (novelai_custom_tags)**：
@@ -564,7 +564,7 @@ solo
 
 **负向标签 (novelai_negative_prompt)**：
 ```
-lowres, low quality, worst quality, jpeg artifacts, blurry, text, logo, signature, watermark, error, missing fingers, extra digit, bad hands, bad anatomy, deformed limbs, poorly drawn face, disfigured, (small breasts:1.2), (flat chest:1.2), blue hair, green eyes, blonde hair, black hair, different face, 2girls, 3girls, multiple girls, group, cloned face, obese, chubby, (abs:1.2), (toned abdomen:1.2), muscular belly, muscular body, muscle definition, hard body, rigid body, defined stomach muscles,big bomb,thick legs,chubby legs,wide hips, huge ass, big ass, large ass,child, kid,immature,small build, short stature,loli,juvenile, underage,unnatural proportions
+lowres, {bad}, error, missing, extra, fewer, cropped, worst quality, bad quality, watermark, text, signature, jpeg artifacts, blurry, flat color
 ```
 
-> 替换角色时只需修改 `novelai_base_tags` 中的角色名和外貌特征，负向标签通常不需要改动。LLM 会根据对话内容自动补全表情、动作、场景标签，穿搭由 `life_scheduler` 注入。
+> 这是最精简的默认配置。使用时需要在 `novelai_base_tags` 中添加角色名和外貌特征（如 `1girl, solo, eris greyrat, red hair, red eyes`），并根据需要扩充负向标签。LLM 会根据对话内容自动补全表情、动作、场景标签，穿搭由 `life_scheduler` 注入。
