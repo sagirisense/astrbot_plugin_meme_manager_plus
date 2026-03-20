@@ -86,7 +86,7 @@ class PluginSettings:
     pixiv_allow_r18: bool = False
 
     # NovelAI 独立模式
-    novelai_enabled: bool = False
+    novelai_enabled: bool = True
     novelai_api_key: str = ""
     novelai_model: str = "nai-diffusion-4-5-full"
     novelai_base_tags: str = "masterpieces, best quality, very aesthetic, highres, 1girl, ((adult eris greyrat:1.2)), ((eris greyrat:1.1)), (perfect face:1.1), strong expression, defined eyebrows, intense gaze, detailed face, delicate skin texturing, (mushoku tensei:1.1), (8 heads tall:1.1), (tall:1.1), slender frame, delicate build, slender figure, graceful posture, smooth skin, natural shape, (teardrop breasts:1.1), defined bust silhouette, noticeable under clothes, natural noticeable breasts, natural cleavage shadows, shadows defining depth, complex lighting, complexion, natural shadow falloff, gentle look, sweet, glossy skin"

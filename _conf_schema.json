@@ -236,7 +236,7 @@
       "novelai_enabled": {
         "description": "启用 NovelAI 模式",
         "type": "bool",
-        "default": false,
+        "default": true,
         "hint": "开启后走 NovelAI 生图流程，关闭时走原有心情表情流程。两者互斥"
       },
       "novelai_api_key": {
