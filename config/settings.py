@@ -87,6 +87,7 @@ class PluginSettings:
 
     # NovelAI 独立模式
     novelai_enabled: bool = True
+    novelai_llm_provider_id: str = ""  # NovelAI 专用 LLM，空则回退到 mood_provider_id
     novelai_api_key: str = ""
     novelai_model: str = "nai-diffusion-4-5-full"
     novelai_base_tags: str = "masterpieces, best quality, very aesthetic, highres, 1girl, ((adult eris greyrat:1.2)), ((eris greyrat:1.1)), (perfect face:1.1), strong expression, defined eyebrows, intense gaze, detailed face, delicate skin texturing, (mushoku tensei:1.1), (8 heads tall:1.1), (tall:1.1), slender frame, delicate build, slender figure, graceful posture, smooth skin, natural shape, (teardrop breasts:1.1), defined bust silhouette, noticeable under clothes, natural noticeable breasts, natural cleavage shadows, shadows defining depth, complex lighting, complexion, natural shadow falloff, gentle look, sweet, glossy skin"
@@ -207,6 +208,7 @@ class ConfigLoader:
 
         # NovelAI
         s.novelai_enabled = self._get("novelai_settings", "novelai_enabled", default=False)
+        s.novelai_llm_provider_id = self._get("novelai_settings", "novelai_llm_provider_id", default="")
         s.novelai_api_key = self._get("novelai_settings", "novelai_api_key", default="")
         s.novelai_model = self._get("novelai_settings", "novelai_model", default="nai-diffusion-4-5-full")
         s.novelai_base_tags = self._get("novelai_settings", "novelai_base_tags", default="1girl, solo")

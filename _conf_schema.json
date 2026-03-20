@@ -239,6 +239,13 @@
         "default": true,
         "hint": "开启后走 NovelAI 生图流程，关闭时走原有心情表情流程。两者互斥"
       },
+      "novelai_llm_provider_id": {
+        "description": "NovelAI 专用 LLM 提供商",
+        "type": "string",
+        "hint": "用于 NovelAI 标签补全、穿搭转换、情景适配的 LLM。留空则使用上方「LLM 分析设置」中的提供商",
+        "_special": "select_provider",
+        "default": ""
+      },
       "novelai_api_key": {
         "description": "NovelAI API Key",
         "type": "string",

@@ -20,10 +20,11 @@ class LLMApiConfig:
         return bool(self.api_key)
 
 
-def load_mood_provider(context, settings) -> LLMApiConfig:
+def load_mood_provider(context, settings, override_provider_id: str = "") -> LLMApiConfig:
     """从情绪分析提供商读取 API 参数。
 
-    优先使用 settings.mood_provider_id 指定的提供商，
+    优先使用 override_provider_id（如果非空），
+    其次使用 settings.mood_provider_id 指定的提供商，
     找不到则回退到默认 CHAT_COMPLETION 提供商。
     """
     cfg = LLMApiConfig()
@@ -33,7 +34,10 @@ def load_mood_provider(context, settings) -> LLMApiConfig:
         return cfg
 
     provider = None
-    if settings.mood_provider_id:
+    # 优先使用 override（NovelAI 独立 LLM 配置）
+    if override_provider_id:
+        provider = provider_mgr.inst_map.get(override_provider_id)
+    if not provider and settings.mood_provider_id:
         provider = provider_mgr.inst_map.get(settings.mood_provider_id)
     if not provider:
         provider = provider_mgr.get_using_provider(

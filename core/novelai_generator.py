@@ -459,7 +459,7 @@ class NovelAIGenerator:
 
         if llm_enabled:
             # LLM 模式：用 LLM 根据对话内容补全标签
-            cfg = load_mood_provider(self.context, self.settings)
+            cfg = load_mood_provider(self.context, self.settings, self.settings.novelai_llm_provider_id)
             if not cfg.valid:
                 logger.warning("[MemeMemPlus-NAI] 未找到 LLM 提供商配置，无法补全标签")
                 return None, None
