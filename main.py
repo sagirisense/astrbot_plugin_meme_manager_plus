@@ -121,6 +121,10 @@ class MoodMemePlugin(Star):
         # 保存后台任务引用，防止被 GC 回收导致异常丢失
         self._bg_tasks: set[asyncio.Task] = set()
 
+        # 启动穿搭自动同步任务（检测 life_scheduler 更新）
+        if self.settings.novelai_use_outfit:
+            self._launch_bg_task(self._outfit_sync_loop())
+
         logger.info(
             f"[MemeMemPlus] 插件初始化完成, "
             f"启用={self.settings.enabled}, "
@@ -134,6 +138,21 @@ class MoodMemePlugin(Star):
         self._bg_tasks.add(task)
         task.add_done_callback(self._bg_tasks.discard)
         return task
+
+    async def _outfit_sync_loop(self):
+        """后台循环：每分钟检测 life_scheduler 穿搭更新，自动刷新缓存。"""
+        await asyncio.sleep(30)  # 首次延迟 30 秒，避免初始化冲突
+        while True:
+            try:
+                if self.settings.novelai_use_outfit:
+                    raw_outfit = self.novelai_gen._get_raw_outfit()
+                    if raw_outfit and raw_outfit != self.novelai_gen._cached_outfit_text:
+                        logger.info(f"[MemeMemPlus] 检测到穿搭变化，自动刷新缓存")
+                        await self.novelai_gen._refresh_outfit_tags()
+                        logger.info(f"[MemeMemPlus] 穿搭缓存已更新: {self.novelai_gen._cached_outfit_tags[:60]}")
+            except Exception as e:
+                logger.debug(f"[MemeMemPlus] 穿搭同步异常: {e}")
+            await asyncio.sleep(60)  # 每分钟检查一次
 
     async def _on_unload(self):
         """插件卸载时清理资源。"""
@@ -451,19 +470,22 @@ class MoodMemePlugin(Star):
                 yield event.plain_result("穿搭注入已开启，下次生图时自动获取穿搭")
         else:
             status = "开启" if self.settings.novelai_use_outfit else "关闭"
-            outfit_tags = self.novelai_gen._cached_outfit_tags or "无"
-            # 汇总所有会话的对话历史
-            all_history = dict(self.novelai_gen._msg_history)  # snapshot
-            total_msgs = sum(len(q) for q in all_history.values())
-            num_sessions = len(all_history)
-            history_str = f"{total_msgs} 条 ({num_sessions} 个会话)" if total_msgs else "空"
-            # 上次适配输出的 tags
-            last_adapted = dict(self.novelai_gen._last_adapted_tags)  # snapshot 防止并发修改
-            adapted_count = len(last_adapted)
             # 诊断：检查 life_scheduler 连接状态
             gen = self.novelai_gen
             raw_outfit = gen._get_raw_outfit()
             plugin_found = gen._life_plugin is not None
+            # 主动刷新穿搭缓存（检测 life_scheduler 的更新）
+            if self.settings.novelai_use_outfit and raw_outfit:
+                await gen._refresh_outfit_tags()
+            outfit_tags = gen._cached_outfit_tags or "无"
+            # 汇总所有会话的对话历史
+            all_history = dict(gen._msg_history)  # snapshot
+            total_msgs = sum(len(q) for q in all_history.values())
+            num_sessions = len(all_history)
+            history_str = f"{total_msgs} 条 ({num_sessions} 个会话)" if total_msgs else "空"
+            # 上次适配输出的 tags
+            last_adapted = dict(gen._last_adapted_tags)  # snapshot 防止并发修改
+            adapted_count = len(last_adapted)
             enabled = self.settings.enabled
             nai_on = self.settings.novelai_enabled
             llm_on = self.settings.novelai_llm_enabled
