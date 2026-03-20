@@ -32,7 +32,7 @@ git clone https://github.com/Sloan-YXT/astrbot_plugin_meme_manager_plus
 
 | 插件 | 用途 | 是否必须 |
 |------|------|----------|
-| [`astrbot_plugin_life_scheduler`](https://github.com/zouyonghe/astrbot_plugin_life_scheduler) | 提供每日穿搭数据，供 NovelAI 穿搭 tag 注入和情景适配使用 | 否 |
+| [`astrbot_plugin_life_scheduler`](https://github.com/muyouzhi6/astrbot_plugin_life_scheduler) | 提供每日穿搭数据，供 NovelAI 穿搭 tag 注入和情景适配使用 | 否 |
 | [`astrbot_plugin_life_scheduler_plus`](https://github.com/Sloan-YXT/astrbot_plugin_life_scheduler_plus) | life_scheduler 的增强版，新增 `/改穿搭`、`/查穿搭` 指令和换装时间点，兼容原插件所有功能（**推荐**） | 否 |
 
 > **推荐使用 life_scheduler_plus**：本插件作者维护的增强版，支持 `/改穿搭`、`/查穿搭` 等指令并新增换装时间点功能，与本插件更适配。不会发布在插件市场，请从 GitHub 手动安装。
