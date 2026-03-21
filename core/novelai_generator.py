@@ -41,7 +41,7 @@ DEFAULT_TAG_PROMPT = (
     "- Hairstyle tags (ponytail, braid, hair_bun, hair_down, twintails, etc.)\n"
     "- Headwear/hair accessories (hat, ribbon, hairband, bow, crown, etc.)\n"
     "- Footwear (shoes, boots, sandals, etc.)\n"
-    "- Accessories (glasses, necklace, earrings, bag, etc.)\n\n"
+    "- Worn accessories (glasses, necklace, earrings, bag, etc.)\n\n"
     "Output ONLY comma-separated tags, no explanation, no base tags.\n"
     "Example: smile, looking_at_viewer, sitting, classroom, hand_on_chin"
 )
@@ -323,7 +323,8 @@ class NovelAIGenerator:
             prompt += f"Last generated outfit tags (from previous image): {last_adapted}\n"
         prompt += (
             f"\nRecent conversation ({len(recent)} messages):\n{conversation}\n\n"
-            f"Judge: based on the conversation, what should the character be wearing RIGHT NOW?\n\n"
+            f"Judge: based on the conversation, what should the character be wearing "
+            f"and holding/using RIGHT NOW?\n\n"
             f"CONTINUITY RULES (HIGHEST PRIORITY):\n"
             f"- If last generated tags exist, treat them as the character's CURRENT state\n"
             f"- Preserve specific details from the last output: colors (pink_panties stays pink),\n"
@@ -342,6 +343,16 @@ class NovelAIGenerator:
             f"  Example: '换双袜子' → white_knee_high_socks\n"
             f"  Example: '围个围巾' → red_knitted_scarf\n"
             f"  This ensures the item looks consistent in future images.\n\n"
+            f"HELD ITEMS & PROPS (same continuity as clothing):\n"
+            f"- Track what the character is holding or using (sword, umbrella, book, cup, etc.)\n"
+            f"- Be MAXIMALLY specific: include type, color, material, size\n"
+            f"- BAD: sword, weapon (too vague)\n"
+            f"- GOOD: long_silver_katana, ornate_golden_rapier, wooden_practice_sword\n"
+            f"- Use 'holding_*' tags to indicate the character is actively holding the item\n"
+            f"- Preserve held items across images until the conversation says they put it down\n"
+            f"- If conversation introduces a prop without details, invent specifics:\n"
+            f"  Example: '拿起剑' → holding_sword, long_silver_sword, blade\n"
+            f"  Example: '撑把伞' → holding_umbrella, red_paper_umbrella\n\n"
             f"HAIRSTYLE & ACCESSORIES CONTINUITY:\n"
             f"- Always preserve the current hairstyle unless the conversation explicitly changes it\n"
             f"- Hair accessories (ribbon, hairpin, bow, etc.) must keep their position "
@@ -350,7 +361,10 @@ class NovelAIGenerator:
             f"- 洗澡/泡澡/淋浴 → towel, bare_shoulders, wet_hair, or nude depending on context\n"
             f"- 游泳 → swimsuit/bikini with colors\n"
             f"- 睡觉 → pajamas/nightgown with specific style\n"
-            f"- 换衣/脱衣 → modify items accordingly, keep unchanged items with full detail\n\n"
+            f"- 换衣/脱衣 → modify items accordingly, keep unchanged items with full detail\n"
+            f"- 练剑/战斗/打架 → add weapon with full details + holding_* tag, keep outfit\n"
+            f"- 做饭/料理 → add apron, utensils with details if contextually appropriate\n"
+            f"- 放下/收起物品 → remove the held item tags but keep everything else\n\n"
             f"If outfit should CHANGE: output MODIFIED comma-separated tags with FULL details\n"
             f"If NO change needed: output ONLY the word KEEP\n"
             f"Output ONLY tags or KEEP. No explanation."
@@ -363,9 +377,9 @@ class NovelAIGenerator:
             result = await LLMClient.call(
                 cfg, prompt,
                 system_msg=(
-                    "You judge if a conversation requires outfit changes for an anime character. "
-                    "Maintain continuity with previous outfit state. "
-                    "Be VERY specific about clothing details (color, material, style). "
+                    "You judge if a conversation requires outfit or held-item changes for an anime character. "
+                    "Maintain continuity with previous state (clothing AND held props). "
+                    "Be VERY specific about details (color, material, style, type). "
                     "Output modified tags or KEEP."
                 ),
                 max_tokens=200,
