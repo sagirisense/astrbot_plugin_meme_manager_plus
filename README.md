@@ -1,4 +1,4 @@
-# astrbot_plugin_meme_manager_plus v3.8.4
+# astrbot_plugin_meme_manager_plus v3.8.5
 
 AI 心情表情管理器 — 根据聊天内容和预设特征发送对应图片，实现拟人化图片交互，集成novelai后实现了较好的效果、较快的响应、极低的消耗(默认参数零消耗且效果很好)
 > **Opus 会员（$25/月）无限生图**：默认配置（V4.5 Full, 832×1216, 28 步）完全在 Opus 免费额度内，不消耗 Anlas。只要预设好角色标签，即可无限量自动生图——开了会员就是无限玩。
@@ -365,11 +365,20 @@ LLM Vision 分析每张图片的表情/心情
 - **独立小图模式**：心情表情和 NovelAI 各有独立的表情包模式开关
 - **安全模式**：非 R18 时可独立控制 SFW 约束，关闭后 LLM 自由生成
 - **穿搭 tag 注入**：从 life_scheduler 插件获取今日穿搭，LLM 转换为 NovelAI tag 后注入
-- **穿搭情景适配**：LLM 根据对话历史（最近 N 条消息）判断是否临时修改穿搭（如泡澡→浴巾），保持穿着连续性（颜色、材质、款式细节跨生图保留），仅影响当次生图
+- **穿搭情景适配**：LLM 根据对话历史（最近 N 条消息）判断是否临时修改穿搭（如泡澡→浴巾），保持穿着连续性（颜色、材质、款式细节跨生图保留），同时追踪持有道具（如剑、伞、书），仅影响当次生图
 - **权重控制**：穿搭 tag 支持独立的 NovelAI 权重参数
 - **Opus 免费优化**：默认配置（V4.5 Full, 832×1216, 28步）在 Opus 会员下免费无限生图
 
 ## 更新日志
+
+### v3.8.5
+
+- **穿搭细节强化**：`_refresh_outfit_tags` prompt 重构，穿了的每件物品必须有颜色+材质+款式（如 `white_lace_bra` 而非 `underwear`），未穿的部位必须保留露出 tag（`bare_arms`、`bare_legs` 等），不矫枉过正
+- **道具连续性管理**：`_adapt_outfit_tags` 扩展追踪持有道具（剑、伞、书、锤子等），与衣着同等细节标准（类型+材质+颜色+尺寸+特征），跨图保持一致直到对话说放下
+- **标签禁令收窄**：`DEFAULT_TAG_PROMPT` 的 `Accessories` 改为 `Worn accessories`，不再误杀 `holding_sword` 等场景互动道具 tag
+- **修复 negative tag 拼接产生字面量 "None"**：`extra_negative` 和 `outfit_negative` 初始值从 `None` 改为空字符串，防止 f-string 拼接输出 `"None, ..."`
+- **穿搭转换 max_tokens 提升**：`_refresh_outfit_tags` 从 200 → 300，匹配更细节的穿搭输出需求
+- **R18 规则编号修正**：`_refresh_outfit_tags` 中 R18 规则编号从 `5.` 修正为 `7.`，与重编号后的规则列表对齐
 
 ### v3.8.4
 

@@ -229,7 +229,7 @@ class NovelAIGenerator:
         is_r18 = self.settings.novelai_r18
         try:
             r18_rules = (
-                "\n5. NSFW exposure rules (R18 mode is ON):\n"
+                "\n7. NSFW exposure rules (R18 mode is ON):\n"
                 "   - If a body part has NO clothing covering it, add explicit exposure tags:\n"
                 "     - Breasts uncovered → detailed areola, visible nipples, erect nipples\n"
                 "     - Lower body uncovered → nude, pussy, thighs\n"
@@ -243,26 +243,25 @@ class NovelAIGenerator:
                 f"{raw}\n\n"
                 f"Rules:\n"
                 f"1. Include ALL appearance details: hairstyle, hair color, outerwear, "
-                f"clothing, footwear, accessories.\n"
-                f"2. Use the MOST SPECIFIC tag variant. Examples:\n"
+                f"clothing, underwear, footwear, accessories.\n"
+                f"2. Every worn item MUST have color + material + style/type. Examples:\n"
                 f"   - 'denim short_shorts' not just 'shorts'\n"
                 f"   - 'black pleated_skirt' not just 'skirt'\n"
                 f"   - 'white oversized_hoodie' not just 'hoodie'\n"
                 f"   - 'low_ponytail' not just 'ponytail'\n"
-                f"3. Add body exposure tags implied by the clothing:\n"
+                f"   - 'white_lace_bra, white_lace_panties' not just 'underwear'\n"
+                f"   - 'pink_cotton_camisole' not just 'camisole'\n"
+                f"   If the description omits color or material, fill in a reasonable default.\n"
+                f"3. Body exposure tags — add for every exposed body part:\n"
                 f"   - short sleeves / sleeveless → bare_arms\n"
                 f"   - shorts / short skirt → bare_legs, thighs\n"
                 f"   - crop top / midriff → bare_shoulders, navel\n"
                 f"   - sandals / barefoot → bare_feet\n"
-                f"4. Describe clothing style details (material, pattern, fit):\n"
-                f"   - e.g. 'striped long_sleeves', 'plaid_shirt', 'ribbed_sweater', "
-                f"'lace_trim', 'denim_jacket', 'oversized_t-shirt'\n"
-                f"   - DETAIL COMPLETION: If the description mentions a clothing item but omits color or material,\n"
-                f"     fill in a reasonable default to ensure cross-image consistency.\n"
-                f"     Example: '短裙' → 'black_pleated_skirt' (add color + style)\n"
-                f"     Example: '外套' → 'beige_trench_coat' (add color + type)\n"
-                f"   - STRICT: Only describe items that ARE in the description. Do NOT invent extra clothing,\n"
-                f"     accessories, or layers that the description does not mention.\n"
+                f"   - no top / no bra → bare_chest (or nude tags in R18)\n"
+                f"   IMPORTANT: Do NOT omit exposure tags. If a body part is uncovered, "
+                f"the exposure tag MUST be present.\n"
+                f"4. STRICT: Only describe items that ARE in the description. "
+                f"Do NOT invent extra clothing, accessories, or layers not mentioned.\n"
                 f"5. HAIRSTYLE (MANDATORY): Always include hairstyle tags.\n"
                 f"   - If the description mentions a hairstyle → use that (e.g. ponytail, braid, hair_bun)\n"
                 f"   - If NO hairstyle is mentioned → default to: hair down, flowing hair\n"
@@ -275,7 +274,7 @@ class NovelAIGenerator:
             result = await LLMClient.call(
                 cfg, prompt,
                 system_msg="You are a NovelAI tag expert. Output ONLY comma-separated English tags. Be highly specific about clothing details and implied body exposure.",
-                max_tokens=200,
+                max_tokens=300,
                 timeout=self.settings.llm_timeout,
             )
             # 多行输出合并为逗号分隔的单行
@@ -332,27 +331,36 @@ class NovelAIGenerator:
             f"- Only change items that the conversation explicitly changes\n"
             f"- Example: if last output had 'pink_lace_bra, pink_lace_panties' and user says '脱掉上衣',\n"
             f"  keep 'pink_lace_panties' but remove the bra-related tags\n\n"
-            f"DETAIL RULES:\n"
-            f"- Be MAXIMALLY specific about every clothing item: include color, material, style\n"
-            f"- BAD: underwear, bra, panties (too vague)\n"
-            f"- GOOD: pink_lace_bra, white_cotton_panties, black_silk_nightgown, light_blue_striped_pajamas\n"
+            f"DETAIL RULES (applies to ALL items — clothing, armor, props, everything):\n"
+            f"- Every item MUST have: color + material/texture + shape/size/style\n"
+            f"- Clothing examples:\n"
+            f"  BAD: underwear, bra, panties, skirt (too vague — style will drift between images)\n"
+            f"  GOOD: pink_lace_bra, white_cotton_panties, black_pleated_miniskirt, light_blue_striped_pajamas\n"
+            f"- Armor/protective gear examples:\n"
+            f"  BAD: armor, gauntlet\n"
+            f"  GOOD: silver_steel_breastplate, leather_pauldrons, iron_chainmail, dark_steel_gauntlets\n"
             f"- Include body exposure tags implied by the outfit state\n"
             f"- NEW ITEM COMPLETION: When the conversation adds a new item without full details,\n"
-            f"  you MUST invent reasonable specifics (color, material, shape) using minimal tags.\n"
-            f"  Example: '戴个项链' → silver_pendant_necklace, thin_chain\n"
-            f"  Example: '换双袜子' → white_knee_high_socks\n"
-            f"  Example: '围个围巾' → red_knitted_scarf\n"
-            f"  This ensures the item looks consistent in future images.\n\n"
-            f"HELD ITEMS & PROPS (same continuity as clothing):\n"
-            f"- Track what the character is holding or using (sword, umbrella, book, cup, etc.)\n"
-            f"- Be MAXIMALLY specific: include type, color, material, size\n"
-            f"- BAD: sword, weapon (too vague)\n"
-            f"- GOOD: long_silver_katana, ornate_golden_rapier, wooden_practice_sword\n"
+            f"  you MUST invent reasonable specifics and keep them consistent in all future outputs.\n"
+            f"  Clothing: '戴个项链' → silver_pendant_necklace, thin_chain\n"
+            f"  Clothing: '换双袜子' → white_knee_high_socks\n"
+            f"  Clothing: '围个围巾' → red_knitted_scarf\n"
+            f"  Armor: '穿上盔甲' → silver_steel_full_plate_armor, metal_shine, heavy_armor\n\n"
+            f"HELD ITEMS & PROPS (same detail standard as clothing):\n"
+            f"- Every held item MUST specify: type + material + color + size + notable features\n"
+            f"- Weapons:\n"
+            f"  BAD: sword, weapon, blade (will look different every image)\n"
+            f"  GOOD: holding_sword, long_iron_katana, dark_steel_blade, black_leather_grip, no_scabbard\n"
+            f"  GOOD: holding_weapon, short_wooden_practice_sword, blunt_edge, light_brown\n"
+            f"  GOOD: holding_hammer, large_iron_warhammer, long_oak_handle, heavy\n"
+            f"  GOOD: holding_whip, long_black_leather_whip, braided, coiled\n"
+            f"- Other props:\n"
+            f"  GOOD: holding_book, thick_leather-bound_tome, gold_embossed_cover, old_pages\n"
+            f"  GOOD: holding_umbrella, red_paper_umbrella, bamboo_handle\n"
+            f"  GOOD: holding_cup, white_porcelain_teacup, floral_pattern, small\n"
             f"- Use 'holding_*' tags to indicate the character is actively holding the item\n"
-            f"- Preserve held items across images until the conversation says they put it down\n"
-            f"- If conversation introduces a prop without details, invent specifics:\n"
-            f"  Example: '拿起剑' → holding_sword, long_silver_sword, blade\n"
-            f"  Example: '撑把伞' → holding_umbrella, red_paper_umbrella\n\n"
+            f"- Preserve held items with ALL details until the conversation says they put it down\n"
+            f"- If an item was detailed in last output, copy those EXACT detail tags — do NOT re-invent\n\n"
             f"HAIRSTYLE & ACCESSORIES CONTINUITY:\n"
             f"- Always preserve the current hairstyle unless the conversation explicitly changes it\n"
             f"- Hair accessories (ribbon, hairpin, bow, etc.) must keep their position "
@@ -382,7 +390,7 @@ class NovelAIGenerator:
                     "Be VERY specific about details (color, material, style, type). "
                     "Output modified tags or KEEP."
                 ),
-                max_tokens=200,
+                max_tokens=300,
                 timeout=self.settings.llm_timeout,
             )
             logger.debug(f"[MemeMemPlus-NAI] 穿搭适配 LLM 输出: '{result}'")
@@ -480,7 +488,7 @@ class NovelAIGenerator:
             logger.warning("[MemeMemPlus-NAI] 未配置角色基础标签")
             return None, None
 
-        extra_negative = None
+        extra_negative = ""
         llm_enabled = self.settings.novelai_llm_enabled
 
         if llm_enabled:
@@ -489,7 +497,9 @@ class NovelAIGenerator:
             if not cfg.valid:
                 logger.warning("[MemeMemPlus-NAI] 未找到 LLM 提供商配置，无法补全标签")
                 return None, None
-            extra_tags, extra_negative = await self._generate_tags(cfg, bot_reply, base_tags)
+            extra_tags, neg = await self._generate_tags(cfg, bot_reply, base_tags)
+            if neg:
+                extra_negative = neg
             if not extra_tags:
                 logger.warning("[MemeMemPlus-NAI] LLM 标签补全失败，使用基础标签生图")
                 full_tags = base_tags
@@ -518,7 +528,7 @@ class NovelAIGenerator:
                 full_tags = f"{full_tags}, {r18_custom}"
 
         # 穿搭 tags：直接拼接到末尾，用 (tag:weight) 控制权重
-        outfit_negative: str | None = None
+        outfit_negative = ""
         if self.settings.novelai_use_outfit:
             if not llm_enabled:
                 # 穿搭需要 LLM 转换，非 LLM 模式时跳过
@@ -697,7 +707,7 @@ class NovelAIGenerator:
         return positive, negative
 
     async def _call_nai_api(
-        self, tags: str, extra_negative: str | None = None,
+        self, tags: str, extra_negative: str = "",
         model_override: str | None = None,
     ) -> bytes | None:
         """调用 NovelAI Image Generation API。"""
