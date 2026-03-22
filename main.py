@@ -122,12 +122,6 @@ class MoodMemePlugin(Star):
         # 保存后台任务引用，防止被 GC 回收导致异常丢失
         self._bg_tasks: set[asyncio.Task] = set()
 
-    def _record_last_sent(self, origin: str, path: Path, msg_id: str | int | None) -> None:
-        """记录最近发送的图片，超限时 FIFO 淘汰。"""
-        self._last_sent[origin] = (path, msg_id)
-        while len(self._last_sent) > self._MAX_LAST_SENT:
-            self._last_sent.popitem(last=False)
-
         # 启动穿搭自动同步任务（检测 life_scheduler 更新）
         if self.settings.novelai_use_outfit:
             self._launch_bg_task(self._outfit_sync_loop())
@@ -138,6 +132,12 @@ class MoodMemePlugin(Star):
             f"自动更新={'开' if self.settings.auto_update_enabled else '关'}, "
             f"图库心情数={len(self.library_mgr.get_all_moods())}"
         )
+
+    def _record_last_sent(self, origin: str, path: Path, msg_id: str | int | None) -> None:
+        """记录最近发送的图片，超限时 FIFO 淘汰。"""
+        self._last_sent[origin] = (path, msg_id)
+        while len(self._last_sent) > self._MAX_LAST_SENT:
+            self._last_sent.popitem(last=False)
 
     def _launch_bg_task(self, coro) -> asyncio.Task:
         """创建后台任务并持有引用，任务完成后自动移除。"""

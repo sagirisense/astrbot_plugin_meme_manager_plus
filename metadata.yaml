@@ -11,5 +11,5 @@ help: |
   支持定时从 Booru/Pixiv 图站自动搜图入库（LLM 自动分类心情）。
   命令：心情表情状态 / 心情表情刷新 / 自动搜图开启 / 自动搜图关闭 / 自动搜图立即执行 / 搜图 N
 version: v3.8.5
-author: "LOVEROXY & sleep340"
+author: "LOVEROXY"
 repo: "https://github.com/Sloan-YXT/astrbot_plugin_meme_manager_plus"

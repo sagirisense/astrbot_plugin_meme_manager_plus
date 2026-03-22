@@ -265,9 +265,14 @@ class NovelAIGenerator:
                 f"5. HAIRSTYLE (MANDATORY): Always include hairstyle tags.\n"
                 f"   - If the description mentions a hairstyle → use that (e.g. ponytail, braid, hair_bun)\n"
                 f"   - If NO hairstyle is mentioned → default to: hair down, flowing hair\n"
-                f"6. HAIR ACCESSORIES: If the description mentions hair accessories (ribbon, hairpin, bow, etc.),\n"
-                f"   always specify their position (e.g. hair_ribbon_on_left, hairpin_on_right, hair_bow_center).\n"
-                f"   This ensures consistent placement across multiple images.\n"
+                f"6. POSITION TAGGING (CRITICAL for cross-image consistency):\n"
+                f"   Any item that can be worn/placed on a specific side or position MUST include "
+                f"a position suffix (e.g. _left, _right, _center, _left_wrist, _on_right).\n"
+                f"   Ask yourself: 'Could this item appear on a different side next time?' "
+                f"If yes, pin it to a side.\n"
+                f"   If the description doesn't specify, pick a reasonable side and commit to it.\n"
+                f"   Examples: hair_clip_left, single_earring_right, bracelet_left_wrist, "
+                f"eyepatch_right, hair_ribbon_on_left, shoulder_bag_left\n"
                 f"{r18_rules}"
                 f"Output ONLY comma-separated tags. No explanation."
             )
@@ -363,8 +368,9 @@ class NovelAIGenerator:
             f"- If an item was detailed in last output, copy those EXACT detail tags — do NOT re-invent\n\n"
             f"HAIRSTYLE & ACCESSORIES CONTINUITY:\n"
             f"- Always preserve the current hairstyle unless the conversation explicitly changes it\n"
-            f"- Hair accessories (ribbon, hairpin, bow, etc.) must keep their position "
-            f"(e.g. hair_ribbon_on_left stays on_left). Do NOT move or remove them unless requested\n\n"
+            f"- Any item that can appear on a different side MUST have a position suffix "
+            f"(_left, _right, _center, etc.). For existing items, copy the EXACT position "
+            f"from last output. For NEW items, pick a side and commit to it\n\n"
             f"SCENE HINTS:\n"
             f"- 洗澡/泡澡/淋浴 → towel, bare_shoulders, wet_hair, or nude depending on context\n"
             f"- 游泳 → swimsuit/bikini with colors\n"
@@ -407,7 +413,8 @@ class NovelAIGenerator:
                     history.clear()
                 logger.info(f"[MemeMemPlus-NAI] 穿搭情景适配: '{current_tags[:30]}...' → '{adapted[:50]}...'")
                 return adapted
-            return current_tags
+            # LLM 返回空结果（非 KEEP）：保持上次适配状态
+            return self._last_adapted_tags.get(session_id, current_tags)
         except Exception as e:
             logger.debug(f"[MemeMemPlus-NAI] 穿搭适配判断失败: {e}")
             return self._last_adapted_tags.get(session_id, current_tags)
@@ -558,8 +565,8 @@ class NovelAIGenerator:
             # R18 裸体检测：穿搭 tags 包含裸体关键词时追加 negative
             if outfit_tags and self.settings.novelai_r18:
                 nude_keywords = {"completely_nude", "completely nude", "naked", "nude"}
-                outfit_lower = outfit_tags.lower()
-                if any(kw in outfit_lower for kw in nude_keywords):
+                outfit_tag_lower = {t.strip().lower() for t in outfit_tags.split(",") if t.strip()}
+                if nude_keywords & outfit_tag_lower:
                     nude_neg = self.settings.novelai_r18_nude_negative or _DEFAULT_R18_NUDE_NEGATIVE
                     outfit_negative = f"{outfit_negative}, {nude_neg}" if outfit_negative else nude_neg
                     logger.debug("[MemeMemPlus-NAI] 裸体穿搭检测，追加 nude negative tags")
