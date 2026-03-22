@@ -1,6 +1,6 @@
 name: astrbot_plugin_meme_manager_plus
 display_name: AI 心情表情管理器 Plus
-desc: 自动检测Bot回复情绪，双级概率触发（表达欲望+LLM生图），支持Gemini/Grok/NovelAI生图引擎，Booru/Pixiv自动搜图入库，NovelAI角色扮演生图（Vibe Transfer/img2img/Precise Reference）" 与JSON中提交的desc "大模型分析对话情景，并基于预设的novelai形象tag，生成无消耗、效果较好的沉浸式图片对话体验。推荐安装日常穿搭插件，体验极好，不会玩novelai也支持心情表情模式。
+desc: 大模型分析对话情景，并基于预设的novelai形象tag，生成无消耗、效果较好的沉浸式图片对话体验。推荐安装日常穿搭插件，体验极好，不会玩novelai也支持心情表情模式。
 help: |
   自动检测 Bot 回复的情绪和表达欲望，双级概率独立判定。
   第一级：表达欲望评分决定是否触发发图。
