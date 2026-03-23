@@ -11,7 +11,7 @@ from pathlib import Path
 
 from astrbot.api import logger
 from astrbot.api.event import filter, AstrMessageEvent
-from astrbot.api.star import Context, Star, register
+from astrbot.api.star import Context, Star, StarTools, register
 from astrbot.api.provider import LLMResponse
 from astrbot.core.message.components import Image
 from astrbot.core.message.message_event_result import MessageChain
@@ -80,9 +80,9 @@ class MoodMemePlugin(Star):
         cfg_loader = ConfigLoader(config)
         self.settings = cfg_loader.load()
 
-        # 初始化数据目录和图库（放在插件目录下，与借鉴项目保持一致）
-        self.plugin_dir = Path(__file__).parent
-        self.library_dir = self.plugin_dir / "memes"
+        # 初始化数据目录（使用框架规范的 plugin_data 目录，避免热更新/容器化时数据丢失）
+        self.data_dir = StarTools.get_data_dir("astrbot_plugin_meme_manager_plus")
+        self.library_dir = self.data_dir / "memes"
 
         self.library_mgr = LibraryManager(self.library_dir)
         self.library_mgr.initialize()
@@ -100,17 +100,17 @@ class MoodMemePlugin(Star):
             self.auto_updater.start()
 
         # 删图功能：trash 目录
-        self.trash_dir = self.plugin_dir / "trash"
+        self.trash_dir = self.data_dir / "trash"
         self.trash_dir.mkdir(parents=True, exist_ok=True)
 
         # NovelAI 生图模式（独立）
-        self.novelai_gen = NovelAIGenerator(self.settings, context, self.plugin_dir)
+        self.novelai_gen = NovelAIGenerator(self.settings, context, self.data_dir)
         self.novelai_cooldown = CooldownManager(
             self.settings.novelai_cooldown_seconds, self.settings.per_group
         )
 
         # Tag 预设存储目录
-        self._tag_preset_dir = self.plugin_dir / "novelai" / "tag_presets"
+        self._tag_preset_dir = self.data_dir / "novelai" / "tag_presets"
         self._tag_preset_dir.mkdir(parents=True, exist_ok=True)
 
         # 记录每个会话最近发送的图片路径和消息ID，用于 /删图
