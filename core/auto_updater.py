@@ -517,7 +517,19 @@ class AutoUpdater:
                 if size > MAX_RAW:
                     logger.info(f"[MemeMemPlus] 图片超过50MB跳过: {size // 1024 // 1024}MB ← {url[:120]}")
                     return None
-                raw = await resp.read()
+                # 无 Content-Length 时流式读取并限制大小，防止 OOM
+                if size == 0:
+                    chunks = []
+                    total = 0
+                    async for chunk in resp.content.iter_chunked(64 * 1024):
+                        total += len(chunk)
+                        if total > MAX_RAW:
+                            logger.info(f"[MemeMemPlus] 流式下载超过50MB中断 ← {url[:120]}")
+                            return None
+                        chunks.append(chunk)
+                    raw = b"".join(chunks)
+                else:
+                    raw = await resp.read()
 
             # 小图直接返回
             if len(raw) <= COMPRESS_THRESHOLD:

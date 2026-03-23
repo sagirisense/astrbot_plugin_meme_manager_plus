@@ -151,7 +151,7 @@ class LLMClient:
 
         parts: list[dict] = []
         if b64_image:
-            b64_safe, mime = _ensure_gemini_compatible(b64_image)
+            b64_safe, mime = await asyncio.to_thread(_ensure_gemini_compatible, b64_image)
             parts.append({"inlineData": {"mimeType": mime, "data": b64_safe}})
         parts.append({"text": prompt})
 

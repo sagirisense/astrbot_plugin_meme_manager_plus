@@ -99,7 +99,7 @@ class MoodMemePlugin(Star):
         if self.settings.auto_update_enabled:
             self.auto_updater.start()
 
-        # 删图功能：trash 目录（放在插件根目录，不在 memes/ 下）
+        # 删图功能：trash 目录
         self.trash_dir = self.plugin_dir / "trash"
         self.trash_dir.mkdir(parents=True, exist_ok=True)
 
