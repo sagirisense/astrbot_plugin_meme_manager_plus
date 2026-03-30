@@ -373,29 +373,29 @@ class MoodMemePlugin(Star):
         msg_id = None
         # aiocqhttp: 直接调用 bot API 以获取 message_id
         if hasattr(event, "bot") and hasattr(event.bot, "send_group_msg"):
-                b64_str = base64.b64encode(image_bytes).decode()
-                seg = {"type": "image", "data": {"file": f"base64://{b64_str}"}}
-                if use_sticker:
-                    seg["data"]["subType"] = "7"
-                group_id = event.get_group_id()
-                if group_id:
-                    ret = await event.bot.send_group_msg(
-                        group_id=int(group_id), message=[seg]
-                    )
-                else:
-                    ret = await event.bot.send_private_msg(
-                        user_id=int(event.get_sender_id()), message=[seg]
-                    )
-                if isinstance(ret, dict):
-                    msg_id = ret.get("message_id")
-            elif event.get_platform_name() == "gewechat":
-                await event.send(MessageChain([Image.fromBytes(image_bytes)]))
-            else:
-                await self.context.send_message(
-                    event.unified_msg_origin,
-                    MessageChain([Image.fromBytes(image_bytes)]),
+            b64_str = base64.b64encode(image_bytes).decode()
+            seg = {"type": "image", "data": {"file": f"base64://{b64_str}"}}
+            if use_sticker:
+                seg["data"]["subType"] = "7"
+            group_id = event.get_group_id()
+            if group_id:
+                ret = await event.bot.send_group_msg(
+                    group_id=int(group_id), message=[seg]
                 )
-            logger.info(f"[MemeMemPlus] 表情图片已发送, msg_id={msg_id}")
+            else:
+                ret = await event.bot.send_private_msg(
+                    user_id=int(event.get_sender_id()), message=[seg]
+                )
+            if isinstance(ret, dict):
+                msg_id = ret.get("message_id")
+        elif event.get_platform_name() == "gewechat":
+            await event.send(MessageChain([Image.fromBytes(image_bytes)]))
+        else:
+            await self.context.send_message(
+                event.unified_msg_origin,
+                MessageChain([Image.fromBytes(image_bytes)]),
+            )
+        logger.info(f"[MemeMemPlus] 表情图片已发送, msg_id={msg_id}")
         return msg_id
 
     def _save_generated_image(self, mood: str, image_bytes: bytes) -> None:
