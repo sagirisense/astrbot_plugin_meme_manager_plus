@@ -50,8 +50,8 @@ def _ensure_gemini_compatible(b64_data: str) -> tuple[str, str]:
         img.save(buf, format="JPEG", quality=90)
         return base64.b64encode(buf.getvalue()).decode(), "image/jpeg"
     except Exception:
-        # 转换失败，原样返回让 API 报错
-        return b64_data, "image/jpeg"
+        # 转换失败，原样返回并保留原始 MIME
+        return b64_data, mime
 
 
 class LLMClient:

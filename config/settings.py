@@ -109,6 +109,8 @@ class PluginSettings:
     novelai_llm_enabled: bool = True  # 是否用 LLM 补全标签，关闭后直接用 base_tags
     novelai_sticker_mode: bool = True  # NovelAI 独立小图模式
     novelai_direct_model: str = ""  # /ni 原图模式专用模型，留空使用 novelai_model
+    novelai_direct_steps: int = 0  # /ni 专用步数，0=使用 novelai_steps
+    novelai_direct_scale: float = 0.0  # /ni 专用 CFG Scale，0=使用 novelai_scale
     novelai_outfit_weight: float = 1.0  # 穿搭 tag 权重
     novelai_outfit_adapt: bool = False  # 穿搭情景适配（根据对话历史临时修改穿搭）
     novelai_outfit_history: int = 20  # 穿搭情景适配参考的对话消息条数
@@ -230,6 +232,8 @@ class ConfigLoader:
         s.novelai_llm_enabled = self._get("novelai_settings", "novelai_llm_enabled", default=True)
         s.novelai_sticker_mode = self._get("novelai_settings", "novelai_sticker_mode", default=True)
         s.novelai_direct_model = self._get("novelai_settings", "novelai_direct_model", default="")
+        s.novelai_direct_steps = self._get("novelai_settings", "novelai_direct_steps", default=0)
+        s.novelai_direct_scale = self._get("novelai_settings", "novelai_direct_scale", default=0.0)
         s.novelai_outfit_weight = self._get("novelai_settings", "novelai_outfit_weight", default=1.0)
         s.novelai_outfit_adapt = self._get("novelai_settings", "novelai_outfit_adapt", default=False)
         s.novelai_outfit_history = self._get("novelai_settings", "novelai_outfit_history", default=20)
@@ -264,6 +268,8 @@ class ConfigLoader:
         s.novelai_cooldown_seconds = max(0, s.novelai_cooldown_seconds)
         s.novelai_scale = max(0.0, s.novelai_scale)
         s.novelai_steps = max(1, min(50, s.novelai_steps))
+        s.novelai_direct_steps = max(0, min(50, s.novelai_direct_steps))
+        s.novelai_direct_scale = max(0.0, s.novelai_direct_scale)
         s.novelai_width = max(64, s.novelai_width)
         s.novelai_height = max(64, s.novelai_height)
         s.max_library_size = max(0, s.max_library_size)

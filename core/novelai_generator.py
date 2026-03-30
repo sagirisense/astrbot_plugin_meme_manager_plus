@@ -107,6 +107,11 @@ _WEIGHT_RE = re.compile(r"[(){}\[\]]")
 _WEIGHT_SUFFIX_RE = re.compile(r":\d+\.?\d*$")
 
 
+def _append_tags(existing: str, new: str) -> str:
+    """拼接逗号分隔的 tag 字符串，空串安全。"""
+    return f"{existing}, {new}" if existing else new
+
+
 def _normalize_tag(tag: str) -> str:
     """去除权重语法，返回纯标签文本用于去重比较。"""
     t = _WEIGHT_RE.sub("", tag).strip()
@@ -186,13 +191,7 @@ class NovelAIGenerator:
             if not schedule:
                 return None
             outfit = getattr(schedule, "outfit", "") or ""
-            outfit_style = getattr(schedule, "outfit_style", "") or ""
-            parts = []
-            if outfit:
-                parts.append(outfit)
-            if outfit_style:
-                parts.append(outfit_style)
-            return ", ".join(parts) if parts else None
+            return outfit if outfit else None
         except Exception as e:
             logger.debug(f"[MemeMemPlus-NAI] 获取穿搭失败: {e}")
             return None
@@ -204,12 +203,11 @@ class NovelAIGenerator:
             return self._cached_outfit_tags
         # 穿搭变化
         logger.debug(f"[MemeMemPlus-NAI] 穿搭变化检测: 旧='{self._cached_outfit_text[:30]}' 新='{raw[:30]}'")
-        # 基础穿搭变了，清除所有会话的适配历史和消息历史（旧上下文已过时）
-        self._last_adapted_tags.clear()
-        self._msg_history.clear()
         if not raw:
             self._cached_outfit_text = ""
             self._cached_outfit_tags = ""
+            self._last_adapted_tags.clear()
+            self._msg_history.clear()
             logger.info("[MemeMemPlus-NAI] 穿搭已清空")
             return ""
         # 判断穿搭是否实质为空（所有衣着部位都是"无"）
@@ -223,6 +221,8 @@ class NovelAIGenerator:
             # R18 模式下全裸：直接使用预设裸体 tags，不调 LLM
             self._cached_outfit_text = raw
             self._cached_outfit_tags = self.settings.novelai_r18_nude_tags or _DEFAULT_R18_NUDE_TAGS
+            self._last_adapted_tags.clear()
+            self._msg_history.clear()
             logger.info(f"[MemeMemPlus-NAI] 穿搭全为「无」+ R18 模式，使用裸体 tags")
             return self._cached_outfit_tags
         # LLM 转换穿搭描述为 NovelAI tags
@@ -290,6 +290,9 @@ class NovelAIGenerator:
                 tags = ""
             self._cached_outfit_text = raw  # 成功后才更新缓存 key，失败时下次可重试
             self._cached_outfit_tags = tags
+            # 穿搭成功转换后才清除适配历史（旧上下文已过时），避免 LLM 失败时永久丢失上下文
+            self._last_adapted_tags.clear()
+            self._msg_history.clear()
             logger.info(f"[MemeMemPlus-NAI] 穿搭 tag 已更新: '{raw[:30]}...' → '{tags}'")
         except Exception as e:
             logger.warning(f"[MemeMemPlus-NAI] 穿搭 tag 转换失败，下次将重试: {e}")
@@ -561,14 +564,14 @@ class NovelAIGenerator:
                     if "hair_down" not in outfit_tag_set and "flowing_hair" not in outfit_tag_set:
                         outfit_tags = f"{outfit_tags}, {_HAIR_DOWN_POSITIVE}"
                     hair_neg = _HAIR_DOWN_NEGATIVE
-                outfit_negative = f"{outfit_negative}, {hair_neg}" if outfit_negative else hair_neg
+                outfit_negative = _append_tags(outfit_negative, hair_neg)
             # R18 裸体检测：穿搭 tags 包含裸体关键词时追加 negative
             if outfit_tags and self.settings.novelai_r18:
-                nude_keywords = {"completely_nude", "completely nude", "naked", "nude"}
-                outfit_tag_lower = {t.strip().lower() for t in outfit_tags.split(",") if t.strip()}
+                nude_keywords = {"completely_nude", "naked", "nude"}
+                outfit_tag_lower = {t.strip().lower().replace(" ", "_") for t in outfit_tags.split(",") if t.strip()}
                 if nude_keywords & outfit_tag_lower:
                     nude_neg = self.settings.novelai_r18_nude_negative or _DEFAULT_R18_NUDE_NEGATIVE
-                    outfit_negative = f"{outfit_negative}, {nude_neg}" if outfit_negative else nude_neg
+                    outfit_negative = _append_tags(outfit_negative, nude_neg)
                     logger.debug("[MemeMemPlus-NAI] 裸体穿搭检测，追加 nude negative tags")
             if outfit_tags:
                 ow = self.settings.novelai_outfit_weight
@@ -581,12 +584,12 @@ class NovelAIGenerator:
 
         # 合并穿搭 negative tags
         if outfit_negative:
-            extra_negative = f"{extra_negative}, {outfit_negative}" if extra_negative else outfit_negative
+            extra_negative = _append_tags(extra_negative, outfit_negative)
 
         logger.info(f"[MemeMemPlus-NAI] 最终正向标签: {full_tags}")
         final_negative = self.settings.novelai_negative_prompt
         if extra_negative:
-            final_negative = f"{final_negative}, {extra_negative}" if final_negative else extra_negative
+            final_negative = _append_tags(final_negative, extra_negative)
         logger.info(f"[MemeMemPlus-NAI] 最终负向标签: {final_negative}")
 
         # 2. 调用 NovelAI API（extra_negative 会追加到配置的负向标签后面）
@@ -615,7 +618,12 @@ class NovelAIGenerator:
 
         logger.info(f"[MemeMemPlus-NAI] /ni 直接生图, 正向标签: {positive_tags}, 模型: {model_override or '默认'}")
         logger.info(f"[MemeMemPlus-NAI] /ni 负向标签: {self.settings.novelai_negative_prompt}")
-        image_bytes = await self._call_nai_api(positive_tags.strip(), model_override=model_override)
+        image_bytes = await self._call_nai_api(
+            positive_tags.strip(),
+            model_override=model_override,
+            steps_override=self.settings.novelai_direct_steps,
+            scale_override=self.settings.novelai_direct_scale,
+        )
         if not image_bytes:
             return None, None
 
@@ -716,6 +724,8 @@ class NovelAIGenerator:
     async def _call_nai_api(
         self, tags: str, extra_negative: str = "",
         model_override: str | None = None,
+        steps_override: int = 0,
+        scale_override: float = 0.0,
     ) -> bytes | None:
         """调用 NovelAI Image Generation API。"""
         api_key = self.settings.novelai_api_key
@@ -732,7 +742,7 @@ class NovelAIGenerator:
         negative = self.settings.novelai_negative_prompt
         # 追加 LLM 动态生成的负向标签
         if extra_negative:
-            negative = f"{negative}, {extra_negative}" if negative else extra_negative
+            negative = _append_tags(negative, extra_negative)
         is_v4 = "nai-diffusion-4" in model  # 匹配 V4 和 V4.5
 
         s = self.settings
@@ -743,15 +753,18 @@ class NovelAIGenerator:
         params: dict = {
             "width": s.novelai_width,
             "height": s.novelai_height,
-            "scale": s.novelai_scale,
+            "scale": scale_override if scale_override > 0 else s.novelai_scale,
             "sampler": s.novelai_sampler,
-            "steps": s.novelai_steps,
+            "steps": steps_override if steps_override > 0 else s.novelai_steps,
             "n_samples": 1,
             "seed": seed,
             "negative_prompt": negative,
             "qualityToggle": s.novelai_quality_toggle,
             "ucPreset": s.novelai_uc_preset,
         }
+
+        # 所有模式都需要 extra_noise_seed
+        params["extra_noise_seed"] = random.randint(0, 2**32 - 1)
 
         if is_v4:
             # V4/V4.5 专用参数
@@ -762,6 +775,9 @@ class NovelAIGenerator:
             params["sm"] = False  # V4 不支持 SMEA
             params["sm_dyn"] = False
             params["legacy"] = False
+            params["legacy_v3_extend"] = False
+            params["prefer_brownian"] = True
+            params["add_original_image"] = True
             params["use_coords"] = False
             params["characterPrompts"] = []
             params["v4_prompt"] = {
@@ -809,7 +825,6 @@ class NovelAIGenerator:
                     action = "img2img"
                     params["strength"] = s.novelai_img2img_strength
                     params["noise"] = s.novelai_img2img_noise
-                    params["extra_noise_seed"] = random.randint(0, 2**32 - 1)
                     logger.info(
                         f"[MemeMemPlus-NAI] 使用参考图 img2img "
                         f"(strength={s.novelai_img2img_strength}, noise={s.novelai_img2img_noise})"

@@ -158,6 +158,7 @@ class AutoUpdater:
 
     async def _run_once(self, limit_override: int | None = None) -> dict:
         """执行一轮搜索。返回统计 dict: {saved, searched, dl_fail, filtered, mood_fail, total, skipped}。"""
+        # locked() + async with 之间无 await，asyncio 单线程下安全
         if self._lock.locked():
             logger.info("[MemeMemPlus] 自动更新: 已有搜图任务在执行，跳过")
             return {"skipped": "busy"}
@@ -378,7 +379,7 @@ class AutoUpdater:
                             break
                         data = await resp.json()
 
-                    if not data:
+                    if not isinstance(data, list) or not data:
                         break
                     if page == 1:
                         logger.info(f"[MemeMemPlus] Booru 第1页返回 {len(data)} 条")
@@ -458,7 +459,7 @@ class AutoUpdater:
                 logger.error(f"[MemeMemPlus] Pixiv 搜索失败 (page {pg}): {e}")
                 break
 
-            illusts = resp.get("illusts", [])
+            illusts = resp.get("illusts") or []
             if not illusts:
                 break
             if pg == 0:
@@ -672,11 +673,9 @@ class AutoUpdater:
         save_path.write_bytes(image_bytes)
         async with self._seen_lock:
             self._seen_ids.add(post_id)
-            # 防止 _seen_ids 无限增长：超限时从磁盘重建，但保留内存中的新 ID
+            # 防止 _seen_ids 无限增长：超限时从磁盘重建
             if len(self._seen_ids) > self._MAX_SEEN_IDS:
                 disk_ids = self._load_seen_ids()
-                self._seen_ids |= disk_ids  # 合并而非替换，避免丢失未持久化的 ID
-                # 若合并后仍超限，保留最近的磁盘 ID（文件名中有 post_id，磁盘扫描天然去重）
-                if len(self._seen_ids) > self._MAX_SEEN_IDS * 2:
-                    self._seen_ids = disk_ids
+                # 磁盘 ID 是权威来源（文件名即 ID），用磁盘 ID 重建并保留内存中的新 ID
+                self._seen_ids = disk_ids | self._seen_ids
         logger.debug(f"[MemeMemPlus] 自动更新: 已保存 {save_path.name} → {mood}/")

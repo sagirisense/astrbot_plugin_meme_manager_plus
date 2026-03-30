@@ -290,11 +290,23 @@
         "hint": "自动生图（Bot 回复触发）的发送模式。开启后将图片缩放为 200x200 小图再发送。/ni 0 命令也使用此模式"
       },
       "novelai_direct_model": {
-        "description": "/ni 原图模式专用模型",
+        "description": "/ni 直接生图专用模型",
         "type": "string",
         "default": "",
         "options": ["", "nai-diffusion-4-5-full", "nai-diffusion-4-5-curated", "nai-diffusion-4-full", "nai-diffusion-4-curated-preview", "nai-diffusion-3"],
-        "hint": "/ni 命令（不带 0 前缀）发送原图时使用的模型。留空则使用上方的「生图模型」。/ni 0 小图模式始终使用上方的「生图模型」"
+        "hint": "/ni 直接生图（跳过 LLM 补全）使用的模型。留空则使用上方的「生图模型」"
+      },
+      "novelai_direct_steps": {
+        "description": "/ni 直接生图专用步数",
+        "type": "int",
+        "default": 0,
+        "hint": "/ni 直接生图使用的步数。0 表示使用通用的「步数」设置。可设置更高步数以获得更好的直接生图质量"
+      },
+      "novelai_direct_scale": {
+        "description": "/ni 直接生图专用 CFG Scale",
+        "type": "float",
+        "default": 0.0,
+        "hint": "/ni 直接生图使用的 CFG Scale。0 表示使用通用的「CFG Scale」设置。提高此值可增强直接生图的提示词遵循度"
       },
       "novelai_base_tags": {
         "description": "角色基础标签（必填）",

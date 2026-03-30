@@ -1,19 +1,23 @@
 import asyncio
+import base64
 import collections
 import datetime
 import hashlib
 import io
 import json
 import random
+import re
 import shutil
 import traceback
 from pathlib import Path
+
+from PIL import Image as PILImage
 
 from astrbot.api import logger
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, StarTools, register
 from astrbot.api.provider import LLMResponse
-from astrbot.core.message.components import Image
+from astrbot.core.message.components import Image, Reply as ReplyComp
 from astrbot.core.message.message_event_result import MessageChain
 from astrbot.core.star.filter.command import GreedyStr
 from astrbot.api import AstrBotConfig
@@ -163,7 +167,6 @@ class MoodMemePlugin(Star):
                 if self.settings.novelai_use_outfit and self.settings.novelai_llm_enabled:
                     raw_outfit = self.novelai_gen._get_raw_outfit()
                     if raw_outfit and raw_outfit != self.novelai_gen._cached_outfit_text:
-                        from .utils.provider_helper import load_mood_provider
                         cfg = load_mood_provider(self.context, self.settings, self.settings.novelai_llm_provider_id)
                         if cfg.valid:
                             logger.info(f"[MemeMemPlus] 检测到穿搭变化，自动刷新缓存")
@@ -277,8 +280,11 @@ class MoodMemePlugin(Star):
                     image_bytes = None
                 if image_bytes:
                     logger.info(f"[MemeMemPlus] 随机抽取: {picked.name}, mood={mood}")
-                    sent_msg_id = await self._send_image(event, image_bytes)
-                    self._record_last_sent(event.unified_msg_origin, picked, sent_msg_id)
+                    try:
+                        sent_msg_id = await self._send_image(event, image_bytes)
+                        self._record_last_sent(event.unified_msg_origin, picked, sent_msg_id)
+                    except Exception:
+                        logger.error(f"[MemeMemPlus] 发送图片失败: {traceback.format_exc()}")
 
             # 第二级：LLM 生图概率（独立判定，发送后再生图入库）
             if not (
@@ -330,7 +336,6 @@ class MoodMemePlugin(Star):
 
     def _to_sticker(self, image_bytes: bytes, size: int = 200) -> bytes:
         """将图片等比缩放到正方形内，透明填充空白区域，输出 GIF。"""
-        from PIL import Image as PILImage
         img = PILImage.open(io.BytesIO(image_bytes))
         # 等比缩放，使最长边 = size，保留完整画面
         w, h = img.size
@@ -358,19 +363,17 @@ class MoodMemePlugin(Star):
     async def _send_image(
         self, event: AstrMessageEvent, image_bytes: bytes, sticker: bool | None = None,
     ) -> str | int | None:
-        """发送图片到对应会话，返回 message_id（如果平台支持）。
+        """发送图片到对应会话，返回 message_id（如果平台支持）。发送失败时抛出异常。
 
         sticker: 是否以小图模式发送。None=使用心情表情的 sticker_mode 设置。
         """
-        try:
-            use_sticker = sticker if sticker is not None else self.settings.sticker_mode
-            if use_sticker:
-                image_bytes = await asyncio.to_thread(self._to_sticker, image_bytes)
-            msg_id = None
-            # aiocqhttp: 直接调用 bot API 以获取 message_id
-            if hasattr(event, "bot") and hasattr(event.bot, "send_group_msg"):
-                import base64 as b64mod
-                b64_str = b64mod.b64encode(image_bytes).decode()
+        use_sticker = sticker if sticker is not None else self.settings.sticker_mode
+        if use_sticker:
+            image_bytes = await asyncio.to_thread(self._to_sticker, image_bytes)
+        msg_id = None
+        # aiocqhttp: 直接调用 bot API 以获取 message_id
+        if hasattr(event, "bot") and hasattr(event.bot, "send_group_msg"):
+                b64_str = base64.b64encode(image_bytes).decode()
                 seg = {"type": "image", "data": {"file": f"base64://{b64_str}"}}
                 if use_sticker:
                     seg["data"]["subType"] = "7"
@@ -393,10 +396,7 @@ class MoodMemePlugin(Star):
                     MessageChain([Image.fromBytes(image_bytes)]),
                 )
             logger.info(f"[MemeMemPlus] 表情图片已发送, msg_id={msg_id}")
-            return msg_id
-        except Exception:
-            logger.error(f"[MemeMemPlus] 发送图片失败: {traceback.format_exc()}")
-            return None
+        return msg_id
 
     def _save_generated_image(self, mood: str, image_bytes: bytes) -> None:
         """将生成的图片保存到对应心情目录，并刷新缓存。"""
@@ -496,7 +496,6 @@ class MoodMemePlugin(Star):
             plugin_found = gen._life_plugin is not None
             # 主动刷新穿搭缓存（检测 life_scheduler 的更新）
             if self.settings.novelai_use_outfit and self.settings.novelai_llm_enabled and raw_outfit:
-                from .utils.provider_helper import load_mood_provider
                 cfg = load_mood_provider(self.context, self.settings, self.settings.novelai_llm_provider_id)
                 if cfg.valid:
                     await gen._refresh_outfit_tags(cfg)
@@ -672,7 +671,6 @@ class MoodMemePlugin(Star):
 
         # 2. 尝试从回复的消息中获取图片
         if not target_path:
-            from astrbot.core.message.components import Reply as ReplyComp
             for comp in event.message_obj.message:
                 if isinstance(comp, ReplyComp) and comp.chain:
                     img_comp = self._find_image_in_chain(comp.chain)
@@ -699,7 +697,12 @@ class MoodMemePlugin(Star):
             suffix = dest.suffix
             dest = self.trash_dir / f"{stem}_{hashlib.md5(target_path.read_bytes()).hexdigest()[:6]}{suffix}"
 
-        shutil.move(str(target_path), str(dest))
+        try:
+            shutil.move(str(target_path), str(dest))
+        except OSError as e:
+            logger.error(f"[MemeMemPlus] 移动文件到回收站失败: {e}")
+            yield event.plain_result(f"删图失败: {e}")
+            return
         self.library_mgr.refresh()
 
         # 尝试撤回消息
@@ -740,22 +743,23 @@ class MoodMemePlugin(Star):
         if not gen._life_plugin:
             return False
         try:
-            import datetime as _dt
             data_mgr = getattr(gen._life_plugin, "data_mgr", None)
             if not data_mgr:
                 return False
             # 跨日回退：0 点后今日数据未生成时写回昨日数据
-            now = _dt.datetime.now()
+            now = datetime.datetime.now()
             schedule = None
             for offset in range(4):
-                s = data_mgr.get(now - _dt.timedelta(days=offset))
+                s = data_mgr.get(now - datetime.timedelta(days=offset))
                 if s and getattr(s, "status", "") != "failed":
                     schedule = s
                     break
             if not schedule:
                 return False
             schedule.outfit = outfit_text
-            schedule.outfit_style = ""
+            # 从穿搭文本提取风格（与 life_scheduler 逻辑一致）
+            m = re.match(r"^\s*风格[：:]\s*(.+)", outfit_text)
+            schedule.outfit_style = m.group(1).strip() if m else ""
             data_mgr.set(schedule)
             logger.info(f"[MemeMemPlus-NAI] 穿搭已写回 life_scheduler: {outfit_text[:40]}")
             return True

@@ -84,7 +84,13 @@ class LibraryManager:
         images = self._cache.get(mood, [])
         if not images:
             return None
-        return random.choice(images)
+        # 过滤已被外部删除的文件，避免返回 stale 路径
+        existing = [p for p in images if p.exists()]
+        if not existing:
+            return None
+        if len(existing) != len(images):
+            self._cache[mood] = existing
+        return random.choice(existing)
 
     def get_all_references(self, mood: str) -> list[Path]:
         """返回指定心情目录下的所有参考图。"""

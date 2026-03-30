@@ -29,6 +29,8 @@ class MoodAnalyzer:
         """
         if not text or not text.strip():
             return 0.0, None
+        if not available_moods:
+            return 0.0, None
 
         cfg = load_mood_provider(self.context, self.settings)
         if not cfg.valid:
