@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 
-
 DEFAULT_MOOD_PROMPT = (
     "You must analyze the text below and respond with EXACTLY one line in this format:\n"
     "score|mood\n\n"

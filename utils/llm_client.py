@@ -15,7 +15,6 @@ from astrbot.api import logger
 
 from .provider_helper import LLMApiConfig
 
-
 # Gemini 支持的图片 MIME 类型
 _GEMINI_SUPPORTED_MIME = {"image/jpeg", "image/png", "image/webp"}
 
@@ -194,7 +193,7 @@ class LLMClient:
                         text = part["text"].strip()
                         if single_line and "\n" in text:
                             # 取最后一个非空行，防止尾部空行导致返回空字符串
-                            lines = [l.strip() for l in text.split("\n") if l.strip()]
+                            lines = [line.strip() for line in text.split("\n") if line.strip()]
                             text = lines[-1] if lines else text
                         return text
         except Exception as e:
@@ -257,7 +256,7 @@ class LLMClient:
                 if not content:
                     content = msg.get("reasoning_content", "").strip()
                 if single_line and content and "\n" in content:
-                    lines = [l.strip() for l in content.split("\n") if l.strip()]
+                    lines = [line.strip() for line in content.split("\n") if line.strip()]
                     content = lines[-1] if lines else content
                 return content or None
         except Exception as e:

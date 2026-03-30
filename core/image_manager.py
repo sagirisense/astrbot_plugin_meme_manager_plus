@@ -12,8 +12,8 @@ from astrbot.api import logger
 from astrbot.core.provider.entities import ProviderType
 
 from ..config.settings import PluginSettings
-from ..utils.provider_helper import DEFAULT_GEMINI_BASE
 from ..utils.llm_client import LLMClient
+from ..utils.provider_helper import DEFAULT_GEMINI_BASE
 
 # Gemini 支持的 MIME 类型（不含 GIF/BMP）
 GEMINI_MIME_MAP = {
@@ -165,7 +165,7 @@ class MoodImageManager:
             if loaded:
                 logger.debug(f"[MemeMemPlus] Gemini 图生图: {loaded} 张参考图")
             else:
-                logger.debug(f"[MemeMemPlus] 参考图全部读取失败，降级为文生图")
+                logger.debug("[MemeMemPlus] 参考图全部读取失败，降级为文生图")
         else:
             logger.debug(f"[MemeMemPlus] Gemini 文生图: mood={mood}")
 

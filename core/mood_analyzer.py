@@ -4,8 +4,8 @@ import traceback
 from astrbot.api import logger
 
 from ..config.settings import DEFAULT_MOOD_PROMPT
-from ..utils.provider_helper import load_mood_provider
 from ..utils.llm_client import LLMClient
+from ..utils.provider_helper import load_mood_provider
 
 
 class MoodAnalyzer:

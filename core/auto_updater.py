@@ -14,8 +14,8 @@ from PIL import Image
 from astrbot.api import logger
 
 from ..config.settings import PluginSettings
-from ..utils.provider_helper import load_mood_provider
 from ..utils.llm_client import LLMClient
+from ..utils.provider_helper import load_mood_provider
 
 # Booru API 端点
 BOORU_APIS = {
@@ -233,7 +233,7 @@ class AutoUpdater:
                         logger.info(f"[MemeMemPlus] 自动更新: 图片被筛选拒绝 → {_post_url(post['id'])}")
                         return ("__filtered__", post, image_bytes)
                 # 分类
-                url = _post_url(post['id'])
+                url = _post_url(post["id"])
                 mood = await self._classify_mood(image_bytes, available_moods, post_url=url)
                 if mood == "__api_error__":
                     # API 失败，不加入 seen_ids，下次可重试
@@ -506,8 +506,6 @@ class AutoUpdater:
         """使用已有 Session 下载图片，大图自动压缩。硬上限 50MB 防止内存爆炸。"""
         MAX_RAW = 50 * 1024 * 1024       # 原始下载上限 50MB
         COMPRESS_THRESHOLD = 5 * 1024 * 1024  # 超过 5MB 自动压缩
-        TARGET_MAX_DIM = 1600             # 压缩后最长边
-        JPEG_QUALITY = 85
 
         try:
             async with session.get(url) as resp:

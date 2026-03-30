@@ -8,19 +8,19 @@
 import base64
 import collections
 import hashlib
+import io
 import random
 import re
-import zipfile
-import io
 import traceback
+import zipfile
 from pathlib import Path
 
 import aiohttp
+
 from astrbot.api import logger
 
-from ..utils.provider_helper import LLMApiConfig, load_mood_provider
 from ..utils.llm_client import LLMClient
-
+from ..utils.provider_helper import LLMApiConfig, load_mood_provider
 
 NAI_API_URL = "https://image.novelai.net/ai/generate-image"
 
@@ -223,7 +223,7 @@ class NovelAIGenerator:
             self._cached_outfit_tags = self.settings.novelai_r18_nude_tags or _DEFAULT_R18_NUDE_TAGS
             self._last_adapted_tags.clear()
             self._msg_history.clear()
-            logger.info(f"[MemeMemPlus-NAI] 穿搭全为「无」+ R18 模式，使用裸体 tags")
+            logger.info("[MemeMemPlus-NAI] 穿搭全为「无」+ R18 模式，使用裸体 tags")
             return self._cached_outfit_tags
         # LLM 转换穿搭描述为 NovelAI tags
         is_r18 = self.settings.novelai_r18
@@ -284,7 +284,7 @@ class NovelAIGenerator:
             )
             # 多行输出合并为逗号分隔的单行
             if result:
-                lines = [l.strip().rstrip(",").strip() for l in result.splitlines() if l.strip()]
+                lines = [line.strip().rstrip(",").strip() for line in result.splitlines() if line.strip()]
                 tags = ", ".join(lines).rstrip(",").strip()
             else:
                 tags = ""
@@ -406,7 +406,7 @@ class NovelAIGenerator:
             if not result or result.strip().upper() == "KEEP":
                 # KEEP = 维持当前状态（上次适配结果 > 基础穿搭）
                 return self._last_adapted_tags.get(session_id, current_tags)
-            lines = [l.strip().rstrip(",").strip() for l in result.splitlines() if l.strip()]
+            lines = [line.strip().rstrip(",").strip() for line in result.splitlines() if line.strip()]
             adapted = ", ".join(lines).rstrip(",").strip()
             if adapted:
                 self._last_adapted_tags[session_id] = adapted
@@ -707,11 +707,11 @@ class NovelAIGenerator:
             # NEGATIVE: 行仅在 R18 模式下解析（只有 R18_TAG_ADDON 要求此格式）
             lower = stripped.lower()
             if is_r18 and lower.startswith("negative:"):
-                neg_text = stripped[len("negative:"):].strip().strip(',')
+                neg_text = stripped[len("negative:"):].strip().strip(",")
                 if neg_text:
                     negative = neg_text
             else:
-                pos_parts.append(stripped.rstrip(',').strip())
+                pos_parts.append(stripped.rstrip(",").strip())
 
         if pos_parts:
             positive = ", ".join(pos_parts)

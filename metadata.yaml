@@ -13,3 +13,7 @@ help: |
 version: v3.8.5
 author: "LOVEROXY & sleep340"
 repo: "https://github.com/Sloan-YXT/astrbot_plugin_meme_manager_plus"
+astrbot_version: ">=4.0.0"
+support_platforms:
+  - aiocqhttp
+  - gewechat

@@ -13,20 +13,20 @@ from pathlib import Path
 
 from PIL import Image as PILImage
 
-from astrbot.api import logger
-from astrbot.api.event import filter, AstrMessageEvent
-from astrbot.api.star import Context, Star, StarTools, register
+from astrbot.api import AstrBotConfig, logger
+from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.provider import LLMResponse
-from astrbot.core.message.components import Image, Reply as ReplyComp
+from astrbot.api.star import Context, Star, StarTools, register
+from astrbot.core.message.components import Image
+from astrbot.core.message.components import Reply as ReplyComp
 from astrbot.core.message.message_event_result import MessageChain
 from astrbot.core.star.filter.command import GreedyStr
-from astrbot.api import AstrBotConfig
 
 from .config.settings import ConfigLoader
+from .core.auto_updater import AutoUpdater
+from .core.image_manager import MoodImageManager
 from .core.library_manager import LibraryManager
 from .core.mood_analyzer import MoodAnalyzer
-from .core.image_manager import MoodImageManager
-from .core.auto_updater import AutoUpdater
 from .core.novelai_generator import NovelAIGenerator
 from .utils.cooldown_manager import CooldownManager
 from .utils.provider_helper import load_mood_provider
@@ -169,7 +169,7 @@ class MoodMemePlugin(Star):
                     if raw_outfit and raw_outfit != self.novelai_gen._cached_outfit_text:
                         cfg = load_mood_provider(self.context, self.settings, self.settings.novelai_llm_provider_id)
                         if cfg.valid:
-                            logger.info(f"[MemeMemPlus] 检测到穿搭变化，自动刷新缓存")
+                            logger.info("[MemeMemPlus] 检测到穿搭变化，自动刷新缓存")
                             await self.novelai_gen._refresh_outfit_tags(cfg)
                             logger.info(f"[MemeMemPlus] 穿搭缓存已更新: {self.novelai_gen._cached_outfit_tags[:60]}")
             except Exception as e:
@@ -428,14 +428,14 @@ class MoodMemePlugin(Star):
             f"生图概率: {self.settings.llm_generation_probability}%",
             f"图库: {len(stats)} 个心情, {non_empty} 个有参考图, 共 {total} 张",
             "",
-            f"--- NovelAI 模式 ---",
+            "--- NovelAI 模式 ---",
             f"状态: {'开启（替代心情表情）' if self.settings.novelai_enabled else '关闭'}",
             f"参考图: {'已上传' if self.novelai_gen.has_reference else '未上传'}"
             f"{'（' + {'img2img': 'img2img', 'director': 'Precise Ref', 'vibe_transfer': 'Vibe Transfer'}.get(self.settings.novelai_reference_mode, self.settings.novelai_reference_mode) + '）' if self.settings.novelai_use_reference else '（未启用）'}",
             f"触发概率: {self.settings.novelai_probability}%",
             f"冷却: {self.settings.novelai_cooldown_seconds}秒",
             "",
-            f"--- 自动搜图 ---",
+            "--- 自动搜图 ---",
             f"状态: {'运行中' if self.auto_updater.running else '已关闭'}",
             f"间隔: {self.settings.auto_update_interval_hours}h",
             f"标签: {self.settings.auto_update_search_tags}",
@@ -521,7 +521,7 @@ class MoodMemePlugin(Star):
                 f"穿搭情景适配: {'开启' if adapt_on else '关闭'} (参考最近 {self.settings.novelai_outfit_history} 条对话)",
                 f"上次适配输出: {list(last_adapted.values())[0][:80] if adapted_count == 1 else f'{adapted_count} 个会话有记录' if adapted_count else '无'}",
                 f"对话历史: {history_str}",
-                f"--- 诊断 ---",
+                "--- 诊断 ---",
                 f"life_scheduler: {'已找到' if plugin_found else '未找到'}",
                 f"穿搭原文: {raw_outfit or '无'}",
                 f"概率: {self.settings.novelai_probability}% | 冷却: {self.settings.novelai_cooldown_seconds}s",
