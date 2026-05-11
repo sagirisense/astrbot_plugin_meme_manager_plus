@@ -433,6 +433,57 @@ class MoodImageManager:
         logger.warning("[MemeMemPlus] gptimage2 响应中未找到图片数据")
         return None
 
+    async def _gptimage2_img2img(
+        self, prompt: str, headers: dict, quality: str, size: str, ref_path: Path
+    ) -> bytes | None:
+        """gptimage2 图生图: POST /images/edits（multipart/form-data）"""
+        url = f"{self._api_base}/images/edits"
+
+        try:
+            raw_data = ref_path.read_bytes()
+            compressed, mime_type = await asyncio.to_thread(self._compress_image, raw_data)
+        except Exception:
+            logger.warning(f"[MemeMemPlus] gptimage2: 读取/压缩参考图失败: {ref_path.name}，降级文生图")
+            json_headers = {
+                "Authorization": headers["Authorization"],
+                "Content-Type": "application/json",
+            }
+            return await self._gptimage2_text2img(prompt, json_headers, quality, size)
+
+        logger.debug(f"[MemeMemPlus] gptimage2 图生图: {ref_path.name}")
+
+        # multipart/form-data — 不能手动设置 Content-Type，aiohttp 会自动加 boundary
+        multipart_headers = {"Authorization": headers["Authorization"]}
+
+        form = aiohttp.FormData()
+        form.add_field("model", self._model)
+        form.add_field("prompt", prompt)
+        form.add_field("quality", quality)
+        form.add_field("size", size)
+        form.add_field(
+            "image",
+            compressed,
+            filename=ref_path.stem + (".jpg" if mime_type == "image/jpeg" else ".png"),
+            content_type=mime_type,
+        )
+
+        try:
+            timeout = aiohttp.ClientTimeout(total=self.settings.timeout)
+            session = await LLMClient.get_session()
+            async with session.post(url, headers=multipart_headers, data=form, timeout=timeout) as resp:
+                if resp.status != 200:
+                    error_text = await resp.text()
+                    logger.error(f"[MemeMemPlus] gptimage2 图生图 API 错误 {resp.status}: {error_text[:200]}")
+                    return None
+                data = await resp.json()
+                return self._parse_gptimage2_response(data)
+        except aiohttp.ClientError as e:
+            logger.error(f"[MemeMemPlus] gptimage2 图生图网络错误: {e}")
+            return None
+        except Exception:
+            logger.error(f"[MemeMemPlus] gptimage2 图生图异常: {traceback.format_exc()}")
+            return None
+
     async def _grok_text2img(self, prompt: str, headers: dict, resolution: str) -> bytes | None:
         """Grok 文生图: POST /images/generations"""
         url = f"{self._api_base}/images/generations"
