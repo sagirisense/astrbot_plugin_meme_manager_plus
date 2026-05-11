@@ -383,6 +383,56 @@ class MoodImageManager:
             logger.debug(f"[MemeMemPlus] gptimage2 文生图: mood={mood}")
             return await self._gptimage2_text2img(prompt, headers, quality, size)
 
+    async def _gptimage2_text2img(self, prompt: str, headers: dict, quality: str, size: str) -> bytes | None:
+        """gptimage2 文生图: POST /images/generations"""
+        url = f"{self._api_base}/images/generations"
+        payload = {
+            "model": self._model,
+            "prompt": prompt,
+            "quality": quality,
+            "size": size,
+            "response_format": "b64_json",
+            "n": 1,
+        }
+
+        try:
+            timeout = aiohttp.ClientTimeout(total=self.settings.timeout)
+            session = await LLMClient.get_session()
+            async with session.post(url, headers=headers, json=payload, timeout=timeout) as resp:
+                if resp.status != 200:
+                    error_text = await resp.text()
+                    logger.error(f"[MemeMemPlus] gptimage2 API 错误 {resp.status}: {error_text[:200]}")
+                    return None
+                data = await resp.json()
+                return self._parse_gptimage2_response(data)
+        except aiohttp.ClientError as e:
+            logger.error(f"[MemeMemPlus] gptimage2 API 网络错误: {e}")
+            return None
+        except Exception:
+            logger.error(f"[MemeMemPlus] gptimage2 API 异常: {traceback.format_exc()}")
+            return None
+
+    def _parse_gptimage2_response(self, response_data: dict) -> bytes | None:
+        """从 gptimage2 响应中提取图片（OpenAI images 格式，b64_json）。"""
+        data_list = response_data.get("data", [])
+        if not data_list:
+            logger.warning(f"[MemeMemPlus] gptimage2 响应无 data: {str(response_data)[:200]}")
+            return None
+
+        item = data_list[0]
+        b64 = item.get("b64_json", "")
+        if b64:
+            try:
+                image_bytes = base64.b64decode(b64)
+                logger.debug(f"[MemeMemPlus] gptimage2 图片生成成功 ({len(image_bytes) // 1024}KB)")
+                return image_bytes
+            except Exception:
+                logger.error("[MemeMemPlus] gptimage2 base64 解码失败")
+                return None
+
+        logger.warning("[MemeMemPlus] gptimage2 响应中未找到图片数据")
+        return None
+
     async def _grok_text2img(self, prompt: str, headers: dict, resolution: str) -> bytes | None:
         """Grok 文生图: POST /images/generations"""
         url = f"{self._api_base}/images/generations"
