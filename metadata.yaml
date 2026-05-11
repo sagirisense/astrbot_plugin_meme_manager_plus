@@ -6,11 +6,11 @@ help: |
   第一级：表达欲望评分决定是否触发发图。
   第二级：LLM 生图概率决定是否调用 API 生成新图。
   无论是否生图，都从对应心情目录随机抽取一张发送。
-  支持 Gemini 和 Grok 双引擎，图库有参考图时图生图，无图时文生图。
+  支持 Gemini、Grok、GPT-Image-2 三引擎，图库有参考图时图生图，无图时文生图。
   在 memes/ 下新建文件夹即可添加自定义心情。
   支持定时从 Booru/Pixiv 图站自动搜图入库（LLM 自动分类心情）。
   命令：心情表情状态 / 心情表情刷新 / 自动搜图开启 / 自动搜图关闭 / 自动搜图立即执行 / 搜图 N
-version: v3.8.5
+version: v3.9.0
 author: "LOVEROXY & sleep340"
 repo: "https://github.com/Sloan-YXT/astrbot_plugin_meme_manager_plus"
 astrbot_version: ">=4.0.0"

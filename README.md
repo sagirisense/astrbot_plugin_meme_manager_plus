@@ -1,4 +1,4 @@
-# astrbot_plugin_meme_manager_plus v3.8.5
+# astrbot_plugin_meme_manager_plus v3.9.0
 
 AI 心情表情管理器 — 根据聊天内容和预设特征发送对应图片，实现拟人化图片交互，集成novelai后实现了较好的效果、较快的响应、极低的消耗(默认参数零消耗且效果很好)
 > **Opus 会员（$25/月）无限生图**：默认配置（V4.5 Full, 832×1216, 28 步）完全在 Opus 免费额度内，不消耗 Anlas。只要预设好角色标签，即可无限量自动生图——开了会员就是无限玩。
@@ -52,11 +52,11 @@ git clone https://github.com/Sloan-YXT/astrbot_plugin_meme_manager_plus
 
 ### 模式 A：心情表情模式
 
-Bot 回复后自动分析情绪，从图库抽取匹配心情的表情图发送，并可选调用 Gemini/Grok 生成新图入库。
+Bot 回复后自动分析情绪，从图库抽取匹配心情的表情图发送，并可选调用 Gemini/Grok/GPT-Image-2 生成新图入库。
 
 1. 打开 AstrBot 管理面板 → 插件配置 → `AI 心情表情管理器 Plus`
 2. **LLM 分析设置** → 选择一个提供商作为情绪分析用 LLM（推荐 Gemini Flash 等快速模型）
-3. **大模型生图设置** → 选择一个提供商，并选择生图引擎（`gemini` 或 `grok`）
+3. **大模型生图设置** → 选择一个提供商，并选择生图引擎（`gemini`、`grok` 或 `gptimage2`）
 4. 在 `memes/` 各心情目录下放入几张参考图（如 `memes/happy/` 放开心的图）
 5. 发送消息触发 Bot 回复，插件会自动分析情绪 → 按表达欲望评分决定是否发图，如果决定发图，会从心情文件夹下抽一张发，没图就不发；每次决定发图后，概率判断是否触发LLM生图，触发后在对应心情文件夹下生成一张图;
 6. 调整**触发概率设置**中的「表达欲望门槛」控制发图频率（默认 0.65，越低越频繁）
@@ -94,8 +94,8 @@ Bot 回复后按概率触发，LLM 根据对话内容自动补全角色标签，
 | 配置项 | 说明 | 默认值 |
 |--------|------|--------|
 | provider_id | 生图模型提供商（自动读取密钥/端点） | — |
-| image_provider_type | 生图引擎：`gemini` 或 `grok` | gemini |
-| model | 模型名称（留空用默认） | Gemini: gemini-2.0-flash-exp / Grok: grok-imagine-image |
+| image_provider_type | 生图引擎：`gemini`、`grok` 或 `gptimage2` | gemini |
+| model | 模型名称（留空用默认） | Gemini: gemini-2.0-flash-exp / Grok: grok-imagine-image / GPT-Image-2: gpt-image-2 |
 | timeout | 请求超时（秒） | 60 |
 | resolution | 图片分辨率 | 1K |
 | aspect_ratio | 图片长宽比 | 1:1 |
@@ -277,7 +277,7 @@ Bot 回复文本
 从该心情目录随机抽取一张 → 立即发送
     ↓
 第二级：LLM 生图概率判定（独立，不阻塞发送）
-    ├─ 命中 + 图库未满 → 调用 Gemini/Grok API 生图 → 保存到图库
+    ├─ 命中 + 图库未满 → 调用 Gemini/Grok/GPT-Image-2 API 生图 → 保存到图库
     └─ 未命中或图库已满 → 跳过
 ```
 
@@ -346,7 +346,7 @@ LLM Vision 分析每张图片的表情/心情
 - **发送模式**：支持以 **表情包（GIF 贴纸）** 或 **原图** 两种方式发送，心情表情和 NovelAI 各有独立开关。表情包模式自动等比缩放到正方形，适合聊天中嵌入；原图模式保留完整画质。`/ni 0 <标签>` 可快速切换小图模式。更多参数（模型、分辨率、采样器、CFG、种子、参考图模式等）均可在配置面板调整。
 - **双级概率系统**：表达欲望评分 + LLM 生图概率独立判定，可分别开关和调节
 - **先发后生**：触发后立即从图库抽图发送，LLM 生图在后台异步执行，不阻塞发送
-- **双引擎生图**：支持 Gemini API 和 Grok (xAI) API，可在配置中切换
+- **三引擎生图**：支持 Gemini API、Grok (xAI) API 和 GPT-Image-2 (OpenAI) API，可在配置中切换
 - **图生图 / 文生图**：心情目录有参考图时以其为风格参考，目录为空时纯提示词生成
 - **自动图库积累**：生成的图片自动保存到对应心情目录
 - **图库上限管理**：达到上限后停止自动搜图和 LLM 生图，仅从已有图库随机抽取
@@ -370,6 +370,12 @@ LLM Vision 分析每张图片的表情/心情
 - **Opus 免费优化**：默认配置（V4.5 Full, 832×1216, 28步）在 Opus 会员下免费无限生图
 
 ## 更新日志
+
+### v3.9.0
+
+- **新增 GPT-Image-2 生图引擎**：支持 OpenAI `gpt-image-2` 模型，图库有参考图时走图生图（`/v1/images/edits`），无参考图时走文生图（`/v1/images/generations`），参考图读取失败自动降级文生图
+- **分辨率/比例映射**：`resolution`（1K/2K/4K）映射为 OpenAI quality（low/medium/high），`aspect_ratio` 映射为对应尺寸（1:1→1024×1024，竖向→1024×1536，横向→1536×1024）
+- **复用 AstrBot Provider**：API Key 和 Base URL 由 AstrBot 提供商管理器统一读取，无需额外配置
 
 ### v3.8.5
 
