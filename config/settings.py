@@ -287,7 +287,7 @@ class ConfigLoader:
         # 枚举值校验
         if s.novelai_reference_mode not in ("vibe_transfer", "img2img", "director"):
             s.novelai_reference_mode = "vibe_transfer"
-        if s.image_provider_type.lower() not in ("gemini", "grok"):
+        if s.image_provider_type.lower() not in ("gemini", "grok", "gptimage2"):
             s.image_provider_type = "gemini"
 
         return s

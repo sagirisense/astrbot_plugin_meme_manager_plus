@@ -20,9 +20,9 @@
       "image_provider_type": {
         "description": "生图引擎",
         "type": "string",
-        "hint": "gemini = Gemini API（图生图+文生图），grok = xAI Grok API（OpenAI 兼容格式）",
+        "hint": "gemini = Gemini API（图生图+文生图），grok = xAI Grok API，gptimage2 = OpenAI gpt-image-2（图生图+文生图）",
         "default": "gemini",
-        "options": ["gemini", "grok"]
+        "options": ["gemini", "grok", "gptimage2"]
       },
       "model": {
         "description": "生图模型名称（可选覆盖）",
