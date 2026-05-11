@@ -28,13 +28,28 @@ CONVERT_FORMATS = {".gif", ".bmp"}
 
 DEFAULT_GROK_BASE = "https://api.x.ai/v1"
 
+DEFAULT_GPTIMAGE2_BASE = "https://api.openai.com/v1"
+
+GPTIMAGE2_QUALITY_MAP = {"1K": "low", "2K": "medium", "4K": "high"}
+
+GPTIMAGE2_SIZE_MAP = {
+    "1:1": "1024x1024",
+    "3:4": "1024x1536",
+    "4:3": "1536x1024",
+    "2:3": "1024x1536",
+    "3:2": "1536x1024",
+    "16:9": "1536x1024",
+    "9:16": "1024x1536",
+}
+
 
 class MoodImageManager:
-    """通过 Gemini 或 Grok API 生成心情表情图片。
+    """通过 Gemini、Grok 或 gpt-image-2 API 生成心情表情图片。
 
-    支持两种引擎：
+    支持三种引擎：
     - gemini: Gemini API（图生图 + 文生图）
     - grok: xAI Grok API（OpenAI 兼容格式，图编辑 + 文生图）
+    - gptimage2: OpenAI gpt-image-2（图生图 + 文生图）
     """
 
     def __init__(self, settings: PluginSettings, context=None):
@@ -44,6 +59,7 @@ class MoodImageManager:
         self._model: str = ""
         self._api_base: str = ""
         self._is_grok: bool = False
+        self._is_gptimage2: bool = False
 
     def _load_api_config(self) -> bool:
         """从 AstrBot 提供商加载 API 参数。返回是否成功。"""
