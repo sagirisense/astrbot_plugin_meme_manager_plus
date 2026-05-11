@@ -65,6 +65,7 @@ class MoodImageManager:
         """从 AstrBot 提供商加载 API 参数。返回是否成功。"""
         s = self.settings
         self._is_grok = s.image_provider_type.lower() == "grok"
+        self._is_gptimage2 = s.image_provider_type.lower() == "gptimage2"
 
         if not s.provider_id or not self.context:
             return False
@@ -89,6 +90,8 @@ class MoodImageManager:
         if self._is_grok:
             # Grok: 图片模型和文本模型不同，不从供应商读模型名
             self._model = s.model or "grok-imagine-image"
+        elif self._is_gptimage2:
+            self._model = s.model or "gpt-image-2"
         else:
             self._model = (
                 s.model
@@ -106,6 +109,11 @@ class MoodImageManager:
             if prov_base and not prov_base.endswith("/v1"):
                 prov_base = prov_base + "/v1"
             self._api_base = (prov_base or DEFAULT_GROK_BASE).rstrip("/")
+        elif self._is_gptimage2:
+            # gptimage2: OpenAI 兼容，base 应以 /v1 结尾
+            if prov_base and not prov_base.endswith("/v1"):
+                prov_base = prov_base + "/v1"
+            self._api_base = (prov_base or DEFAULT_GPTIMAGE2_BASE).rstrip("/")
         else:
             # Gemini
             if prov_base and prov_base.endswith("/v1"):
