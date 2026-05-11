@@ -130,6 +130,8 @@ class MoodImageManager:
 
         if self._is_grok:
             return await self._generate_grok(mood, reference_paths)
+        elif self._is_gptimage2:
+            return await self._generate_gptimage2(mood, reference_paths)
         else:
             return await self._generate_gemini(mood, reference_paths)
 
@@ -351,6 +353,35 @@ class MoodImageManager:
         except Exception:
             logger.error(f"[MemeMemPlus] Grok API 异常: {traceback.format_exc()}")
             return None
+
+    # ── gptimage2 生图 ───────────────────────────────────────────
+
+    async def _generate_gptimage2(self, mood: str, reference_paths: list[Path] | None) -> bytes | None:
+        has_refs = bool(reference_paths)
+
+        prompt = self.settings.image_prompt_template.replace("{mood}", mood)
+        if has_refs:
+            addon = self.settings.reference_prompt_addon.replace("{mood}", mood)
+            prompt += "\n" + addon
+
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+        }
+
+        quality = GPTIMAGE2_QUALITY_MAP.get(self.settings.resolution, "low")
+        size = GPTIMAGE2_SIZE_MAP.get(self.settings.aspect_ratio, "1024x1024")
+
+        if has_refs:
+            valid_refs = [p for p in reference_paths if p.exists()]
+            if not valid_refs:
+                logger.debug("[MemeMemPlus] gptimage2: 参考图均不存在，降级为文生图")
+                return await self._gptimage2_text2img(prompt, headers, quality, size)
+            ref_path = random.choice(valid_refs)
+            return await self._gptimage2_img2img(prompt, headers, quality, size, ref_path)
+        else:
+            logger.debug(f"[MemeMemPlus] gptimage2 文生图: mood={mood}")
+            return await self._gptimage2_text2img(prompt, headers, quality, size)
 
     async def _grok_text2img(self, prompt: str, headers: dict, resolution: str) -> bytes | None:
         """Grok 文生图: POST /images/generations"""
