@@ -1,5 +1,7 @@
 import asyncio
 import base64
+import collections
+import datetime
 import io
 import random
 import traceback
@@ -11,9 +13,9 @@ from PIL import Image
 from astrbot.api import logger
 from astrbot.core.provider.entities import ProviderType
 
-from ..config.settings import PluginSettings
+from ..config.settings import DEFAULT_IMAGE_DESCRIPTION_PROMPT, PluginSettings
 from ..utils.llm_client import LLMClient
-from ..utils.provider_helper import DEFAULT_GEMINI_BASE
+from ..utils.provider_helper import DEFAULT_GEMINI_BASE, load_mood_provider
 
 # Gemini 支持的 MIME 类型（不含 GIF/BMP）
 GEMINI_MIME_MAP = {
@@ -52,6 +54,8 @@ class MoodImageManager:
     - gptimage2: OpenAI gpt-image-2（图生图 + 文生图）
     """
 
+    _MAX_TRACKED_SESSIONS = 200
+
     def __init__(self, settings: PluginSettings, context=None):
         self.settings = settings
         self.context = context
@@ -60,6 +64,11 @@ class MoodImageManager:
         self._api_base: str = ""
         self._is_grok: bool = False
         self._is_gptimage2: bool = False
+        self._msg_history: dict[str, collections.deque[tuple[str, str]]] = {}
+        self._last_adapted_outfit: dict[str, str] = {}
+        self._cached_outfit_text: str = ""
+        self._cached_outfit_raw: str = ""
+        self._life_plugin = None
 
     def _load_api_config(self) -> bool:
         """从 AstrBot 提供商加载 API 参数。返回是否成功。"""
@@ -122,25 +131,188 @@ class MoodImageManager:
 
         return bool(self._api_key)
 
-    async def generate(self, mood: str, reference_paths: list[Path] | None) -> bytes | None:
+    def record_message(self, session_id: str, user_text: str, bot_text: str) -> None:
+        if not session_id:
+            return
+        if session_id not in self._msg_history:
+            if len(self._msg_history) >= self._MAX_TRACKED_SESSIONS:
+                oldest_key = next(iter(self._msg_history))
+                del self._msg_history[oldest_key]
+            self._msg_history[session_id] = collections.deque(maxlen=50)
+        self._msg_history[session_id].append((user_text, bot_text))
+
+    def _get_raw_outfit(self) -> str | None:
+        if not self._life_plugin:
+            try:
+                for p in self.context.get_all_stars():
+                    p_id = getattr(p, "id", "") or ""
+                    p_name = getattr(p, "name", "") or ""
+                    if "life_scheduler" in p_id or "life_scheduler" in p_name:
+                        self._life_plugin = (
+                            getattr(p, "star_instance", None)
+                            or getattr(p, "instance", None)
+                            or getattr(p, "star_cls", None)
+                        )
+                        break
+            except Exception:
+                return None
+        if not self._life_plugin:
+            return None
+        try:
+            now = datetime.datetime.now()
+            data_mgr = getattr(self._life_plugin, "data_mgr", None)
+            if not data_mgr:
+                return None
+            schedule = None
+            for offset in range(4):
+                s = data_mgr.get(now - datetime.timedelta(days=offset))
+                if s and getattr(s, "status", "") != "failed":
+                    schedule = s
+                    break
+            if not schedule:
+                return None
+            outfit = getattr(schedule, "outfit", "") or ""
+            return outfit if outfit else None
+        except Exception as e:
+            logger.debug(f"[MemeMemPlus] 获取穿搭失败: {e}")
+            return None
+
+    def _refresh_outfit_raw(self) -> str:
+        raw = self._get_raw_outfit() or ""
+        if raw == self._cached_outfit_text:
+            return self._cached_outfit_raw
+        logger.debug(f"[MemeMemPlus] 穿搭变化: 旧='{self._cached_outfit_text[:30]}' 新='{raw[:30]}'")
+        self._cached_outfit_text = raw
+        self._cached_outfit_raw = raw
+        self._last_adapted_outfit.clear()
+        self._msg_history.clear()
+        if raw:
+            logger.info(f"[MemeMemPlus] 穿搭已更新: '{raw[:40]}'")
+        else:
+            logger.info("[MemeMemPlus] 穿搭已清空")
+        return self._cached_outfit_raw
+
+    async def _adapt_outfit_raw(self, cfg, session_id: str, current_raw: str) -> str:
+        history = self._msg_history.get(session_id)
+        if not history:
+            return current_raw
+        n = self.settings.novelai_outfit_history
+        recent = list(history)[-n:]
+        conv_lines = []
+        for user_msg, bot_msg in recent:
+            if user_msg:
+                conv_lines.append(f"用户: {user_msg[:100]}")
+            if bot_msg:
+                conv_lines.append(f"Bot: {bot_msg[:100]}")
+        conversation = "\n".join(conv_lines)
+        last_adapted = self._last_adapted_outfit.get(session_id, "")
+
+        prompt = f"当前穿搭描述（日常默认）:\n{current_raw}\n"
+        if last_adapted and last_adapted != current_raw:
+            prompt += f"上次适配后的穿搭描述:\n{last_adapted}\n"
+        prompt += (
+            f"\n最近对话（{len(recent)} 条）:\n{conversation}\n\n"
+            f"根据对话内容，判断角色当前穿搭是否需要改变。\n"
+            f"若需要改变，输出修改后的中文穿搭描述（保留未变化的细节）。\n"
+            f"若不需要改变，仅输出 KEEP。\n"
+            f"只输出穿搭描述或 KEEP，不要解释。"
+        )
+        try:
+            result = await LLMClient.call(
+                cfg, prompt,
+                system_msg="你是穿搭状态判断助手。根据对话判断是否需要修改穿搭描述，输出修改后的描述或 KEEP。",
+                max_tokens=300,
+                timeout=self.settings.llm_timeout,
+            )
+            logger.debug(f"[MemeMemPlus] 穿搭适配 LLM 输出: '{result}'")
+            if not result or result.strip().upper() == "KEEP":
+                return self._last_adapted_outfit.get(session_id, current_raw)
+            adapted = result.strip()
+            if adapted:
+                self._last_adapted_outfit[session_id] = adapted
+                history_deque = self._msg_history.get(session_id)
+                if history_deque is not None:
+                    history_deque.clear()
+                logger.info(f"[MemeMemPlus] 穿搭情景适配: → '{adapted[:50]}'")
+                return adapted
+            return self._last_adapted_outfit.get(session_id, current_raw)
+        except Exception as e:
+            logger.debug(f"[MemeMemPlus] 穿搭适配失败: {e}")
+            return self._last_adapted_outfit.get(session_id, current_raw)
+
+    async def _build_prompt_via_llm(self, mood: str, session_id: str, cfg) -> str | None:
+        history = self._msg_history.get(session_id)
+        if not history:
+            return None
+        n = self.settings.llm_prompt_history
+        recent = list(history)[-n:]
+        conv_lines = []
+        for user_msg, bot_msg in recent:
+            if user_msg:
+                conv_lines.append(f"用户: {user_msg[:150]}")
+            if bot_msg:
+                conv_lines.append(f"Bot: {bot_msg[:150]}")
+        conversation = "\n".join(conv_lines)
+
+        outfit_text = "not specified"
+        if self.settings.novelai_use_outfit:
+            outfit_raw = self._refresh_outfit_raw()
+            if outfit_raw and self.settings.novelai_outfit_adapt:
+                outfit_raw = await self._adapt_outfit_raw(cfg, session_id, outfit_raw)
+            if outfit_raw:
+                outfit_text = outfit_raw
+
+        prompt = (
+            DEFAULT_IMAGE_DESCRIPTION_PROMPT
+            .replace("{mood}", mood)
+            .replace("{outfit}", outfit_text)
+            .replace("{conversation}", conversation)
+        )
+
+        try:
+            result = await LLMClient.call(
+                cfg, prompt,
+                system_msg="You are an image prompt writer. Output ONLY a single English description sentence.",
+                max_tokens=200,
+                timeout=self.settings.llm_timeout,
+            )
+            if result and result.strip():
+                logger.debug(f"[MemeMemPlus] LLM 生图描述: {result.strip()[:100]}")
+                return result.strip()
+        except Exception as e:
+            logger.debug(f"[MemeMemPlus] LLM 生图描述生成失败: {e}")
+        return None
+
+    async def generate(self, mood: str, reference_paths: list[Path] | None, session_id: str = "") -> bytes | None:
         """生成心情表情图片。"""
         if not self._load_api_config():
             logger.warning("[MemeMemPlus] 未配置生图 API key，无法生图")
             return None
 
+        llm_description: str | None = None
+        if self.settings.llm_prompt_enabled and session_id:
+            cfg = load_mood_provider(self.context, self.settings, "")
+            if cfg.valid:
+                llm_description = await self._build_prompt_via_llm(mood, session_id, cfg)
+            else:
+                logger.warning("[MemeMemPlus] llm_prompt_enabled=True 但未找到 mood provider，回退默认 prompt")
+
         if self._is_grok:
-            return await self._generate_grok(mood, reference_paths)
+            return await self._generate_grok(mood, reference_paths, llm_description)
         elif self._is_gptimage2:
-            return await self._generate_gptimage2(mood, reference_paths)
+            return await self._generate_gptimage2(mood, reference_paths, llm_description)
         else:
-            return await self._generate_gemini(mood, reference_paths)
+            return await self._generate_gemini(mood, reference_paths, llm_description)
 
     # ── Gemini 生图 ──────────────────────────────────────────────
 
-    async def _generate_gemini(self, mood: str, reference_paths: list[Path] | None) -> bytes | None:
+    async def _generate_gemini(self, mood: str, reference_paths: list[Path] | None, llm_description: str | None = None) -> bytes | None:
         has_refs = bool(reference_paths)
 
-        prompt = self.settings.image_prompt_template.replace("{mood}", mood)
+        if llm_description:
+            prompt = llm_description
+        else:
+            prompt = self.settings.image_prompt_template.replace("{mood}", mood)
         if has_refs:
             addon = self.settings.reference_prompt_addon.replace("{mood}", mood)
             prompt += "\n" + addon
@@ -290,10 +462,13 @@ class MoodImageManager:
         img.save(buf, format="JPEG", quality=quality)
         return buf.getvalue(), "image/jpeg"
 
-    async def _generate_grok(self, mood: str, reference_paths: list[Path] | None) -> bytes | None:
+    async def _generate_grok(self, mood: str, reference_paths: list[Path] | None, llm_description: str | None = None) -> bytes | None:
         has_refs = bool(reference_paths)
 
-        prompt = self.settings.image_prompt_template.replace("{mood}", mood)
+        if llm_description:
+            prompt = llm_description
+        else:
+            prompt = self.settings.image_prompt_template.replace("{mood}", mood)
         if has_refs:
             addon = self.settings.reference_prompt_addon.replace("{mood}", mood)
             prompt += "\n" + addon
@@ -356,10 +531,13 @@ class MoodImageManager:
 
     # ── gptimage2 生图 ───────────────────────────────────────────
 
-    async def _generate_gptimage2(self, mood: str, reference_paths: list[Path] | None) -> bytes | None:
+    async def _generate_gptimage2(self, mood: str, reference_paths: list[Path] | None, llm_description: str | None = None) -> bytes | None:
         has_refs = bool(reference_paths)
 
-        prompt = self.settings.image_prompt_template.replace("{mood}", mood)
+        if llm_description:
+            prompt = llm_description
+        else:
+            prompt = self.settings.image_prompt_template.replace("{mood}", mood)
         if has_refs:
             addon = self.settings.reference_prompt_addon.replace("{mood}", mood)
             prompt += "\n" + addon

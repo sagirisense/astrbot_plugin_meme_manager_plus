@@ -228,6 +228,7 @@ class MoodMemePlugin(Star):
             )
             return
 
+        self.image_mgr.record_message(session_id, event.message_str, response.completion_text)
         if not self.cooldown.can_trigger(session_id, group_id):
             logger.info(f"[MemeMemPlus] 冷却中，跳过 (session={session_id})")
             return
@@ -305,7 +306,7 @@ class MoodMemePlugin(Star):
             ref_paths = self.library_mgr.get_all_references(mood)
             sample_refs = random.sample(ref_paths, 3) if len(ref_paths) > 3 else ref_paths
             logger.info(f"[MemeMemPlus] LLM生图命中: mood={mood}, mode={'图生图' if sample_refs else '文生图'}")
-            gen_bytes = await self.image_mgr.generate(mood, sample_refs or None)
+            gen_bytes = await self.image_mgr.generate(mood, sample_refs or None, session_id=session_id)
             if gen_bytes:
                 self._save_generated_image(mood, gen_bytes)
 

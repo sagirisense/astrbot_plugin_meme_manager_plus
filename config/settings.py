@@ -36,6 +36,21 @@ DEFAULT_REFERENCE_ADDON = (
     "Match the exact art style precisely."
 )
 
+DEFAULT_IMAGE_DESCRIPTION_PROMPT = (
+    "You are an image prompt writer for an anime character chat sticker.\n"
+    "Given the current mood, outfit, and recent conversation, write a vivid natural-language "
+    "description of the character's expression and pose for image generation.\n\n"
+    "Current mood: {mood}\n"
+    "Today's outfit: {outfit}\n"
+    "Recent conversation:\n{conversation}\n\n"
+    "Write a single concise English sentence (20-40 words) describing:\n"
+    "- Facial expression matching the mood\n"
+    "- Body pose or gesture\n"
+    "- Clothing appearance based on the outfit (if provided)\n"
+    "- Brief atmosphere/background hint\n\n"
+    "Output ONLY the description sentence, no explanation, no quotes."
+)
+
 
 @dataclass
 class PluginSettings:
@@ -53,6 +68,8 @@ class PluginSettings:
     mood_provider_id: str = ""
     custom_mood_prompt: str = ""
     llm_timeout: int = 30
+    llm_prompt_enabled: bool = False
+    llm_prompt_history: int = 10
 
     # Probability
     expression_threshold: float = 0.65
@@ -170,6 +187,8 @@ class ConfigLoader:
         s.mood_provider_id = self._get("mood_analysis_settings", "mood_provider_id", default="")
         s.custom_mood_prompt = self._get("mood_analysis_settings", "custom_mood_prompt", default="")
         s.llm_timeout = self._get("mood_analysis_settings", "llm_timeout", default=30)
+        s.llm_prompt_enabled = self._get("mood_analysis_settings", "llm_prompt_enabled", default=False)
+        s.llm_prompt_history = self._get("mood_analysis_settings", "llm_prompt_history", default=10)
 
         # Probability
         s.expression_threshold = self._get("probability_settings", "expression_threshold", default=0.65)
@@ -275,6 +294,7 @@ class ConfigLoader:
         s.novelai_max_cache = max(0, s.novelai_max_cache)
         s.novelai_outfit_weight = max(0.1, min(2.0, s.novelai_outfit_weight))
         s.novelai_outfit_history = max(1, s.novelai_outfit_history)
+        s.llm_prompt_history = max(1, s.llm_prompt_history)
         # 参考图参数 0-1 范围
         s.novelai_reference_strength = max(0.0, min(1.0, s.novelai_reference_strength))
         s.novelai_reference_info_extracted = max(0.0, min(1.0, s.novelai_reference_info_extracted))
