@@ -9,7 +9,7 @@ help: |
   在 memes/ 下新建文件夹即可添加自定义心情。
   支持定时从 Booru/Pixiv 图站自动搜图入库（LLM 自动分类心情）。
   命令：心情表情状态 / 心情表情刷新 / 自动搜图开启 / 自动搜图关闭 / 自动搜图立即执行 / 搜图 N
-version: v3.9.1
+version: v3.9.2
 author: "LOVEROXY & sleep340 & sagirisense"
 repo: "https://github.com/sagirisense/astrbot_plugin_meme_manager_plus"
 astrbot_version: ">=4.0.0"
