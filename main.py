@@ -269,9 +269,11 @@ class MoodMemePlugin(Star):
             )
 
             # 第二级：LLM 生图概率门控
-            use_llm = (
-                self.settings.llm_generation_enabled
-                and random.randint(1, 100) <= self.settings.llm_generation_probability
+            roll = random.randint(1, 100)
+            use_llm = self.settings.llm_generation_enabled and roll <= self.settings.llm_generation_probability
+            logger.info(
+                f"[MemeMemPlus] LLM生图概率判定: roll={roll}, threshold={self.settings.llm_generation_probability}, "
+                f"enabled={self.settings.llm_generation_enabled}, hit={use_llm}"
             )
 
             if use_llm:
