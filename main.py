@@ -268,47 +268,54 @@ class MoodMemePlugin(Star):
                 f"[MemeMemPlus] 触发表情: score={score:.2f} >= {threshold:.2f}, mood={mood}"
             )
 
-            # 先从该心情目录随机抽一张发送（不被生图阻塞）
+            # 第二级：LLM 生图概率门控
+            use_llm = (
+                self.settings.llm_generation_enabled
+                and random.randint(1, 100) <= self.settings.llm_generation_probability
+            )
+
+            if use_llm:
+                # 图库总上限检查
+                max_lib = self.settings.max_library_size
+                if max_lib > 0:
+                    total = sum(self.library_mgr.get_stats().values())
+                    if total >= max_lib:
+                        logger.info(f"[MemeMemPlus] 图库已达上限({total}>={max_lib})，降级随机抽取")
+                        use_llm = False
+
+            if use_llm:
+                ref_paths = self.library_mgr.get_all_references(mood)
+                sample_refs = random.sample(ref_paths, 3) if len(ref_paths) > 3 else ref_paths
+                logger.info(f"[MemeMemPlus] LLM生图命中: mood={mood}, mode={'图生图' if sample_refs else '文生图'}")
+                gen_bytes = await self.image_mgr.generate(mood, sample_refs or None, session_id=session_id)
+                if gen_bytes:
+                    try:
+                        sent_msg_id = await self._send_image(event, gen_bytes)
+                        saved_path = self._save_generated_image(mood, gen_bytes)
+                        if saved_path is not None:
+                            self._record_last_sent(event.unified_msg_origin, saved_path, sent_msg_id)
+                        return
+                    except Exception:
+                        logger.error(f"[MemeMemPlus] 发送生成图失败: {traceback.format_exc()}")
+                logger.warning(f"[MemeMemPlus] LLM生图失败，降级随机抽取, mood={mood}")
+
+            # 随机抽取（概率未命中 或 生图失败 的兜底）
             all_images = self.library_mgr.get_all_references(mood)
             if not all_images:
                 logger.info(f"[MemeMemPlus] {mood} 目录为空，不发送")
-            else:
-                picked = random.choice(all_images)
-                try:
-                    image_bytes = picked.read_bytes()
-                except OSError:
-                    logger.warning(f"[MemeMemPlus] 抽取的图片读取失败（可能已被删除）: {picked.name}")
-                    image_bytes = None
-                if image_bytes:
-                    logger.info(f"[MemeMemPlus] 随机抽取: {picked.name}, mood={mood}")
-                    try:
-                        sent_msg_id = await self._send_image(event, image_bytes)
-                        self._record_last_sent(event.unified_msg_origin, picked, sent_msg_id)
-                    except Exception:
-                        logger.error(f"[MemeMemPlus] 发送图片失败: {traceback.format_exc()}")
-
-            # 第二级：LLM 生图概率（独立判定，发送后再生图入库）
-            if not (
-                self.settings.llm_generation_enabled
-                and random.randint(1, 100) <= self.settings.llm_generation_probability
-            ):
-                logger.info(f"[MemeMemPlus] LLM生图未命中或已关闭, mood={mood}")
                 return
-
-            # 图库总上限检查
-            max_lib = self.settings.max_library_size
-            if max_lib > 0:
-                total = sum(self.library_mgr.get_stats().values())
-                if total >= max_lib:
-                    logger.info(f"[MemeMemPlus] 图库已达上限({total}>={max_lib})，跳过生图")
-                    return
-
-            ref_paths = self.library_mgr.get_all_references(mood)
-            sample_refs = random.sample(ref_paths, 3) if len(ref_paths) > 3 else ref_paths
-            logger.info(f"[MemeMemPlus] LLM生图命中: mood={mood}, mode={'图生图' if sample_refs else '文生图'}")
-            gen_bytes = await self.image_mgr.generate(mood, sample_refs or None, session_id=session_id)
-            if gen_bytes:
-                self._save_generated_image(mood, gen_bytes)
+            picked = random.choice(all_images)
+            try:
+                image_bytes = picked.read_bytes()
+            except OSError:
+                logger.warning(f"[MemeMemPlus] 抽取的图片读取失败（可能已被删除）: {picked.name}")
+                return
+            logger.info(f"[MemeMemPlus] 随机抽取: {picked.name}, mood={mood}")
+            try:
+                sent_msg_id = await self._send_image(event, image_bytes)
+                self._record_last_sent(event.unified_msg_origin, picked, sent_msg_id)
+            except Exception:
+                logger.error(f"[MemeMemPlus] 发送图片失败: {traceback.format_exc()}")
 
         except Exception:
             logger.error(f"[MemeMemPlus] 后台任务异常: {traceback.format_exc()}")
@@ -399,8 +406,8 @@ class MoodMemePlugin(Star):
         logger.info(f"[MemeMemPlus] 表情图片已发送, msg_id={msg_id}")
         return msg_id
 
-    def _save_generated_image(self, mood: str, image_bytes: bytes) -> None:
-        """将生成的图片保存到对应心情目录，并刷新缓存。"""
+    def _save_generated_image(self, mood: str, image_bytes: bytes) -> Path | None:
+        """将生成的图片保存到对应心情目录，并刷新缓存。返回保存路径，失败返回 None。"""
         mood_dir = self.library_dir / mood
         mood_dir.mkdir(parents=True, exist_ok=True)
         name = hashlib.md5(image_bytes).hexdigest()[:12]
@@ -409,8 +416,10 @@ class MoodMemePlugin(Star):
             save_path.write_bytes(image_bytes)
             self.library_mgr.refresh()
             logger.debug(f"[MemeMemPlus] 图片已保存: {save_path.name}")
+            return save_path
         except Exception:
             logger.warning(f"[MemeMemPlus] 保存图片失败: {traceback.format_exc()}")
+            return None
 
     @filter.command("心情表情状态")
     async def show_status(self, event: AstrMessageEvent):
